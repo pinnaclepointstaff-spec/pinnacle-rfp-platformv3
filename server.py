@@ -1,0 +1,1675 @@
+import json, os, uuid
+from datetime import datetime
+from flask import Flask, request, jsonify, Response
+from flask_cors import CORS
+import urllib.request
+import urllib.error
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.environ.get('DATA_DIR', os.path.join(BASE_DIR, 'data'))
+DATA_FILE = os.path.join(DATA_DIR, 'store.json')
+CONFIG_FILE = os.path.join(DATA_DIR, 'config.json')
+
+app = Flask(__name__)
+CORS(app)
+
+# HTML served inline - no file system dependency
+HTML_CONTENT = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Pinnacle Point — RFP Intelligence Platform</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=DM+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#0D1B2A;--navy-mid:#162435;--navy-light:#1E3347;--navy-b:#243D56;
+  --gold:#C9A84C;--gold-l:#E8C97A;--gold-d:#8A6B2A;--gold-bg:rgba(201,168,76,.1);
+  --slate:#4A6278;--slate-l:#7A9BB5;
+  --cream:#F6F3EE;--cream-d:#EDE9E1;--white:#fff;
+  --ok:#1A6B3A;--ok-bg:#EAF5EE;--ok-b:#9FD4B6;
+  --warn:#7A4F0A;--warn-bg:#FEF4E4;--warn-b:#F0D090;
+  --err:#7A2020;--err-bg:#FEF0F0;--err-b:#F0A0A0;
+  --info:#1A4B7A;--info-bg:#EAF2FB;--info-b:#90BEF0;
+  --font:'DM Sans',sans-serif;--mono:'DM Mono',monospace;
+  --r:8px;--rl:12px;--rxl:16px;
+}
+body{font-family:var(--font);background:var(--cream);color:var(--navy);font-size:14px;height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* TOPBAR */
+.topbar{background:var(--navy);height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 18px;border-bottom:2px solid var(--gold);flex-shrink:0;z-index:50}
+.brand{display:flex;align-items:center;gap:10px}
+.brand-mark{width:30px;height:30px;background:var(--gold);border-radius:6px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px;color:var(--navy)}
+.brand-name{color:#fff;font-size:14px;font-weight:500}
+.brand-tag{color:var(--gold);font-size:9.5px;letter-spacing:1.2px;text-transform:uppercase}
+.topbar-mid{display:flex;gap:6px;align-items:center}
+.deadline-pill{background:var(--err-bg);border:1px solid var(--err-b);border-radius:20px;padding:4px 10px;font-size:11px;font-weight:600;color:var(--err);cursor:pointer;transition:.15s;display:flex;align-items:center;gap:5px}
+.deadline-pill:hover{background:var(--err-b)}
+.deadline-pill.warn{background:var(--warn-bg);border-color:var(--warn-b);color:var(--warn)}
+.deadline-pill.ok{background:var(--ok-bg);border-color:var(--ok-b);color:var(--ok)}
+.topbar-right{display:flex;align-items:center;gap:6px}
+.jp{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;border:1px solid var(--slate);color:var(--slate-l);cursor:pointer;transition:.15s;background:transparent}
+.jp.on{background:var(--gold-d);border-color:var(--gold);color:var(--gold-l)}
+.live-dot{width:7px;height:7px;border-radius:50%;background:#2ECC71;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* LAYOUT */
+.shell{display:flex;flex:1;overflow:hidden}
+.sidebar{width:210px;background:var(--navy-mid);border-right:1px solid var(--navy-b);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--navy-light)}
+.nav-s{padding:12px 10px 5px}
+.nav-lbl{font-size:9px;font-weight:600;letter-spacing:1.8px;text-transform:uppercase;color:var(--slate);margin-bottom:6px}
+.nb{width:100%;padding:8px 10px;border:none;border-radius:7px;background:transparent;text-align:left;cursor:pointer;display:flex;align-items:center;gap:7px;color:var(--slate-l);font-family:var(--font);font-size:12px;margin-bottom:2px;transition:.15s;border-left:2px solid transparent}
+.nb:hover{background:var(--navy-light);color:#fff}
+.nb.active{background:var(--gold-bg);color:var(--gold-l);border-left-color:var(--gold);border-radius:0 7px 7px 0}
+.ni{font-size:13px;width:16px;text-align:center;flex-shrink:0}
+.ndiv{height:1px;background:var(--navy-b);margin:6px 10px}
+.nbadge{margin-left:auto;background:var(--gold);color:var(--navy);border-radius:10px;font-size:9.5px;font-weight:700;padding:1px 6px}
+.nbadge.red{background:var(--err);color:#fff}
+
+/* CONTENT */
+.content{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.tab{display:none;flex:1;overflow:hidden;flex-direction:column}
+.tab.active{display:flex}
+
+/* PAGE HEADER */
+.ph{background:#fff;border-bottom:1px solid var(--cream-d);padding:12px 18px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ph-title{font-size:14px;font-weight:500;color:var(--navy)}
+.ph-sub{font-size:11px;color:var(--slate);margin-top:2px}
+.ph-actions{display:flex;gap:7px;align-items:center}
+
+/* BUTTONS */
+.btn{padding:7px 13px;border-radius:var(--r);font-family:var(--font);font-size:12px;font-weight:500;cursor:pointer;transition:.15s;border:1px solid transparent;display:inline-flex;align-items:center;gap:5px}
+.btn-p{background:var(--gold);color:var(--navy);border-color:var(--gold)}
+.btn-p:hover{background:var(--gold-l)}
+.btn-g{background:transparent;color:var(--slate);border-color:var(--cream-d)}
+.btn-g:hover{background:var(--cream);color:var(--navy)}
+.btn-ok{background:var(--ok-bg);color:var(--ok);border-color:var(--ok-b)}
+.btn-danger{background:var(--err-bg);color:var(--err);border-color:var(--err-b)}
+.btn-navy{background:var(--navy);color:#fff;border-color:var(--navy)}
+.btn-navy:hover{background:var(--navy-light)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+
+/* SCROLL */
+.scroll{overflow-y:auto;flex:1;padding:18px}
+.scroll::-webkit-scrollbar{width:4px}
+.scroll::-webkit-scrollbar-thumb{background:var(--cream-d);border-radius:10px}
+
+/* FORM ELEMENTS */
+.fi{width:100%;padding:7px 10px;border:1px solid var(--cream-d);border-radius:var(--r);font-family:var(--font);font-size:12px;color:var(--navy);background:#fff}
+.fi:focus{outline:none;border-color:var(--gold)}
+.fsel{width:100%;padding:7px 10px;border:1px solid var(--cream-d);border-radius:var(--r);font-family:var(--font);font-size:12px;color:var(--navy);background:#fff}
+.fta{width:100%;border:1px solid var(--cream-d);border-radius:var(--r);padding:9px 11px;font-family:var(--font);font-size:12px;color:var(--navy);resize:vertical;min-height:70px;background:var(--cream)}
+.fta:focus{outline:none;border-color:var(--gold);background:#fff}
+.flbl{font-size:10.5px;color:var(--slate);margin-bottom:4px;display:block;font-weight:500}
+.frow{margin-bottom:10px}
+
+/* CARDS */
+.card{background:#fff;border:1px solid var(--cream-d);border-radius:var(--rl);padding:14px}
+
+/* CHIPS */
+.chip{padding:4px 11px;border-radius:20px;font-size:11px;font-weight:500;border:1px solid var(--cream-d);color:var(--slate);cursor:pointer;transition:.15s;background:transparent}
+.chip:hover{border-color:var(--gold-d);color:var(--gold-d)}
+.chip.on{background:var(--gold-bg);border-color:var(--gold);color:var(--gold-d)}
+
+/* STATE BADGES */
+.sb{padding:3px 7px;border-radius:4px;font-size:9.5px;font-weight:700;letter-spacing:.5px}
+.sb-md{background:#EAF2FB;color:#0C447C}
+.sb-va{background:#EAF5EE;color:#27500A}
+.sb-dc{background:#FEF4E4;color:#633806}
+
+/* TAGS */
+.tag{display:inline-block;padding:2px 7px;border-radius:3px;font-size:9.5px;font-weight:600}
+.tag-req{background:var(--err-bg);color:var(--err)}
+.tag-rec{background:var(--info-bg);color:var(--info)}
+.tag-ong{background:var(--warn-bg);color:var(--warn)}
+
+/* SPINNER */
+.spinner{width:16px;height:16px;border:2px solid var(--gold-d);border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* TOAST */
+.toast{position:fixed;bottom:18px;right:18px;background:var(--navy);color:#fff;padding:10px 15px;border-radius:var(--rl);font-size:12px;font-weight:500;border-left:3px solid var(--gold);z-index:9999;transform:translateX(220px);opacity:0;transition:.3s;max-width:280px}
+.toast.show{transform:translateX(0);opacity:1}
+
+/* MODAL */
+.overlay{position:fixed;inset:0;background:rgba(13,27,42,.75);z-index:200;display:none;align-items:center;justify-content:center;padding:20px}
+.overlay.open{display:flex}
+.modal{background:#fff;border-radius:var(--rxl);width:min(720px,100%);max-height:88vh;overflow:hidden;display:flex;flex-direction:column}
+.mh{padding:14px 18px;border-bottom:1px solid var(--cream-d);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.mh-title{font-size:14px;font-weight:500}
+.mclose{background:none;border:none;font-size:18px;cursor:pointer;color:var(--slate);padding:2px 6px;border-radius:4px}
+.mclose:hover{background:var(--cream)}
+.mb{overflow-y:auto;padding:18px;flex:1}
+.mb::-webkit-scrollbar{width:4px}
+.mb::-webkit-scrollbar-thumb{background:var(--cream-d);border-radius:10px}
+.mf{padding:12px 18px;border-top:1px solid var(--cream-d);display:flex;gap:8px;justify-content:flex-end;flex-shrink:0;flex-wrap:wrap}
+
+/* SCORE BADGE */
+.score-ring{width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:700;border:3px solid}
+.score-high{border-color:var(--ok);color:var(--ok);background:var(--ok-bg)}
+.score-mid{border-color:var(--gold);color:var(--gold-d);background:var(--gold-bg)}
+.score-low{border-color:var(--err);color:var(--err);background:var(--err-bg)}
+
+/* ── MARKETPLACE ── */
+.filter-bar{display:flex;gap:7px;padding:10px 18px;background:#fff;border-bottom:1px solid var(--cream-d);flex-wrap:wrap;flex-shrink:0;align-items:center}
+.fsearch{flex:1;min-width:160px;padding:6px 12px;border:1px solid var(--cream-d);border-radius:20px;font-family:var(--font);font-size:12px;color:var(--navy);background:var(--cream)}
+.fsearch:focus{outline:none;border-color:var(--gold)}
+.rfp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(295px,1fr));gap:12px}
+.rfpc{background:#fff;border:1.5px solid var(--cream-d);border-radius:var(--rl);padding:14px;cursor:pointer;transition:.2s;position:relative}
+.rfpc:hover{border-color:var(--gold);transform:translateY(-2px)}
+.rfpc-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+.rfpc-type{font-size:10px;color:var(--slate);padding:2px 7px;border:1px solid var(--cream-d);border-radius:4px}
+.rfpc-title{font-size:12.5px;font-weight:500;color:var(--navy);margin-bottom:4px;line-height:1.4}
+.rfpc-agency{font-size:11px;color:var(--slate);margin-bottom:9px}
+.rfpc-meta{display:flex;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.rfpc-mi{font-size:11px;color:var(--slate)}
+.rfpc-mi strong{color:var(--navy);font-weight:500}
+.rfpc-footer{display:flex;align-items:center;justify-content:space-between}
+.rfpc-val{font-size:13px;font-weight:600;color:var(--ok)}
+.due-badge{font-size:10px;padding:3px 8px;border-radius:4px;font-weight:600}
+.due-u{background:var(--err-bg);color:var(--err)}
+.due-s{background:var(--warn-bg);color:var(--warn)}
+.due-ok{background:var(--ok-bg);color:var(--ok)}
+.rfpc-actions{display:flex;gap:6px;margin-top:11px;padding-top:11px;border-top:1px solid var(--cream-d)}
+.apply-btn{flex:1;padding:7px;border-radius:var(--r);background:var(--navy);color:#fff;border:none;font-family:var(--font);font-size:12px;font-weight:500;cursor:pointer;transition:.15s}
+.apply-btn:hover{background:var(--gold);color:var(--navy)}
+.save-btn{padding:7px 11px;border-radius:var(--r);background:transparent;color:var(--slate);border:1px solid var(--cream-d);font-family:var(--font);font-size:12px;cursor:pointer;transition:.15s}
+.save-btn:hover{border-color:var(--gold);color:var(--gold-d)}
+.new-badge{position:absolute;top:-7px;right:10px;background:var(--gold);color:var(--navy);font-size:9px;font-weight:700;padding:2px 8px;border-radius:10px;letter-spacing:.8px}
+.rfpc-score{position:absolute;top:12px;right:12px}
+
+/* ── BUILDER ── */
+.builder-wrap{display:flex;flex:1;overflow:hidden}
+.bl{width:300px;border-right:1px solid var(--cream-d);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;background:#fff}
+.bl::-webkit-scrollbar{width:4px}
+.bl::-webkit-scrollbar-thumb{background:var(--cream-d);border-radius:10px}
+.bs{padding:14px;border-bottom:1px solid var(--cream-d)}
+.bs-title{font-size:10px;font-weight:600;color:var(--slate);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px}
+.upload-z{border:2px dashed var(--cream-d);border-radius:var(--rl);padding:16px;text-align:center;cursor:pointer;transition:.2s;background:var(--cream)}
+.upload-z:hover,.upload-z.drag{border-color:var(--gold);background:var(--gold-bg)}
+.uz-icon{font-size:22px;margin-bottom:6px}
+.uz-txt{font-size:11.5px;color:var(--slate);line-height:1.5}
+.uz-txt strong{color:var(--navy);display:block;margin-bottom:2px;font-size:12px}
+.upf{display:flex;align-items:center;gap:7px;padding:7px 9px;background:var(--ok-bg);border:1px solid var(--ok-b);border-radius:var(--r);margin-top:6px}
+.upf-name{font-size:11px;color:var(--ok);flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.upf-rm{font-size:13px;cursor:pointer;color:var(--slate);flex-shrink:0}
+.upf-rm:hover{color:var(--err)}
+.tier-cards{display:flex;flex-direction:column;gap:7px}
+.tc{border:2px solid var(--cream-d);border-radius:var(--rl);padding:11px;cursor:pointer;transition:.15s}
+.tc:hover{border-color:var(--gold-d)}
+.tc.sel{border-color:var(--gold)}
+.tc.tc-l.sel{border-color:var(--ok);background:var(--ok-bg)}
+.tc.tc-h.sel{border-color:var(--navy);background:var(--info-bg)}
+.tc-name{font-size:12px;font-weight:600;margin-bottom:2px}
+.tc-desc{font-size:10.5px;color:var(--slate);line-height:1.4}
+.tc-range{font-size:11px;font-weight:600;margin-top:5px}
+.tc-l .tc-range{color:var(--ok)}
+.tc-m .tc-range{color:var(--gold-d)}
+.tc-h .tc-range{color:var(--navy)}
+
+/* CHAT */
+.br{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.chat-msgs{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:11px}
+.chat-msgs::-webkit-scrollbar{width:4px}
+.chat-msgs::-webkit-scrollbar-thumb{background:var(--cream-d);border-radius:10px}
+.mr{display:flex;gap:7px}
+.mr.u{flex-direction:row-reverse}
+.av{width:25px;height:25px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;flex-shrink:0;margin-top:2px}
+.av.bot{background:var(--gold);color:var(--navy)}
+.av.user{background:var(--navy);color:var(--gold)}
+.bbl{max-width:80%;padding:9px 12px;border-radius:12px;font-size:12.5px;line-height:1.65}
+.bbl.bot{background:#fff;border:1px solid var(--cream-d);color:var(--navy);border-bottom-left-radius:3px}
+.bbl.user{background:var(--navy);color:#fff;border-bottom-right-radius:3px}
+.tdots{display:flex;gap:4px;padding:3px 0}
+.td{width:5px;height:5px;border-radius:50%;background:var(--gold);animation:td 1.2s infinite}
+.td:nth-child(2){animation-delay:.2s}
+.td:nth-child(3){animation-delay:.4s}
+@keyframes td{0%,60%,100%{transform:translateY(0)}30%{transform:translateY(-4px)}}
+.chat-ia{padding:11px 14px;border-top:1px solid var(--cream-d);background:#fff;flex-shrink:0}
+.chat-ir{display:flex;gap:8px;align-items:flex-end}
+.chat-ta{flex:1;border:1px solid var(--cream-d);border-radius:var(--rl);padding:8px 12px;font-family:var(--font);font-size:12.5px;color:var(--navy);resize:none;height:38px;max-height:110px;background:var(--cream)}
+.chat-ta:focus{outline:none;border-color:var(--gold);background:#fff}
+.chat-send{width:38px;height:38px;border-radius:var(--rl);background:var(--gold);color:var(--navy);border:none;cursor:pointer;font-size:15px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:.15s}
+.chat-send:hover{background:var(--gold-l)}
+.chat-send:disabled{opacity:.4;cursor:not-allowed}
+
+/* VERIFY FLAG */
+.vflag{display:flex;gap:6px;align-items:flex-start;padding:7px 9px;background:var(--warn-bg);border:1px solid var(--warn-b);border-radius:6px;margin:5px 0;font-size:11.5px;color:var(--warn)}
+
+/* ── TRACKER ── */
+.tstats{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:18px}
+.sc{background:#fff;border-radius:var(--rl);padding:13px;border:1px solid var(--cream-d)}
+.sc-lbl{font-size:10px;color:var(--slate);text-transform:uppercase;letter-spacing:.8px;margin-bottom:5px}
+.sc-val{font-size:22px;font-weight:600;color:var(--navy)}
+.sc-sub{font-size:10.5px;color:var(--slate);margin-top:2px}
+.kanban{display:flex;gap:12px;overflow-x:auto;padding-bottom:6px}
+.kanban::-webkit-scrollbar{height:5px}
+.kanban::-webkit-scrollbar-thumb{background:var(--cream-d);border-radius:10px}
+.kc{min-width:210px;flex-shrink:0}
+.kh{padding:9px 11px;border-radius:var(--r) var(--r) 0 0}
+.kh-new{background:var(--info-bg);border:1px solid var(--info-b)}
+.kh-prep{background:var(--warn-bg);border:1px solid var(--warn-b)}
+.kh-sub{background:var(--gold-bg);border:1px solid var(--gold)}
+.kh-won{background:var(--ok-bg);border:1px solid var(--ok-b)}
+.kh-lost{background:var(--cream);border:1px solid var(--cream-d)}
+.kt{font-size:11px;font-weight:600}
+.kc-count{font-size:10px;margin-top:1px}
+.kh-new .kt{color:#0C447C}.kh-new .kc-count{color:#378ADD}
+.kh-prep .kt{color:var(--warn)}.kh-prep .kc-count{color:#BA7517}
+.kh-sub .kt{color:var(--gold-d)}.kh-sub .kc-count{color:var(--gold)}
+.kh-won .kt{color:var(--ok)}.kh-won .kc-count{color:#639922}
+.kh-lost .kt{color:var(--slate)}.kh-lost .kc-count{color:var(--slate-l)}
+.kcards{display:flex;flex-direction:column;gap:7px}
+.kcard{background:#fff;border:1px solid var(--cream-d);border-radius:var(--r);padding:10px;cursor:pointer;transition:.15s}
+.kcard:hover{border-color:var(--gold);transform:translateX(2px)}
+.kcard-title{font-size:11.5px;font-weight:500;color:var(--navy);margin-bottom:5px;line-height:1.3}
+.kcard-meta{font-size:10.5px;color:var(--slate);display:flex;justify-content:space-between;align-items:center}
+.kcard-val{font-size:11px;font-weight:600;color:var(--ok);margin-top:4px}
+.kcard-notes{font-size:10px;color:var(--slate);margin-top:4px}
+.kempty{padding:12px;font-size:11.5px;color:var(--slate);text-align:center;border:1px dashed var(--cream-d);border-radius:var(--r)}
+
+/* ── COMPLIANCE ── */
+.cltabs{display:flex;gap:0;border-bottom:2px solid var(--cream-d);flex-shrink:0;background:#fff}
+.clt{padding:10px 18px;font-size:12.5px;font-weight:500;color:var(--slate);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:.15s}
+.clt:hover{color:var(--navy)}
+.clt.active{color:var(--gold-d);border-bottom-color:var(--gold)}
+.clc{display:none;flex:1;overflow:hidden;flex-direction:column}
+.clc.active{display:flex}
+.cl-wrap{display:flex;flex:1;overflow:hidden}
+.cl-nav{width:190px;border-right:1px solid var(--cream-d);overflow-y:auto;flex-shrink:0}
+.cl-cat{width:100%;padding:10px 13px;border:none;background:transparent;text-align:left;cursor:pointer;font-family:var(--font);font-size:12px;color:var(--slate);border-bottom:1px solid var(--cream-d);transition:.15s;display:flex;align-items:center;justify-content:space-between}
+.cl-cat:hover{background:var(--cream);color:var(--navy)}
+.cl-cat.active{background:var(--gold-bg);color:var(--gold-d);font-weight:500}
+.cl-mini{font-size:10px;color:var(--slate-l)}
+.cl-items{flex:1;overflow-y:auto;padding:14px}
+.cl-items::-webkit-scrollbar{width:4px}
+.cl-items::-webkit-scrollbar-thumb{background:var(--cream-d);border-radius:10px}
+.ci{display:flex;align-items:flex-start;gap:9px;padding:10px 11px;border-radius:var(--r);border:1px solid var(--cream-d);margin-bottom:6px;background:#fff;transition:.15s}
+.ci:hover{border-color:var(--gold-d)}
+.ci.done{background:var(--ok-bg);border-color:var(--ok-b)}
+.ci-cb{width:16px;height:16px;border-radius:4px;border:2px solid var(--cream-d);cursor:pointer;flex-shrink:0;margin-top:1px;display:flex;align-items:center;justify-content:center;transition:.15s;background:#fff}
+.ci-cb.ch{background:var(--ok);border-color:var(--ok)}
+.ci-cb.ch::after{content:'✓';color:#fff;font-size:10px;font-weight:700}
+.ci-body{flex:1}
+.ci-title{font-size:12.5px;font-weight:500;color:var(--navy);margin-bottom:2px}
+.ci.done .ci-title{color:var(--ok);text-decoration:line-through}
+.ci-desc{font-size:11px;color:var(--slate);line-height:1.5}
+.pb-wrap{height:5px;background:var(--cream-d);border-radius:10px;margin-bottom:4px}
+.pb{height:100%;border-radius:10px;background:var(--ok);transition:.3s}
+.pb-txt{font-size:10.5px;color:var(--slate);margin-bottom:12px}
+
+/* ── PROFILE ── */
+.profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.profile-section{background:#fff;border:1px solid var(--cream-d);border-radius:var(--rl);padding:16px}
+.profile-section h3{font-size:12px;font-weight:600;color:var(--navy);letter-spacing:.3px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid var(--cream-d)}
+.cred-tag{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:500;background:var(--ok-bg);color:var(--ok);border:1px solid var(--ok-b);margin:3px}
+.cred-tag button{background:none;border:none;cursor:pointer;color:var(--ok);font-size:12px;line-height:1;padding:0 0 0 3px}
+.cred-tag button:hover{color:var(--err)}
+
+/* COMPETITOR */
+.comp-table{width:100%;border-collapse:collapse;font-size:12px}
+.comp-table th{text-align:left;padding:8px 10px;font-size:10px;font-weight:600;letter-spacing:.5px;text-transform:uppercase;color:var(--slate);background:var(--cream);border-bottom:1px solid var(--cream-d)}
+.comp-table td{padding:8px 10px;border-bottom:1px solid var(--cream-d);color:var(--navy)}
+.comp-table tr:last-child td{border-bottom:none}
+.comp-table tr:hover td{background:var(--cream)}
+.award-tier{padding:2px 7px;border-radius:3px;font-size:10px;font-weight:600}
+.at-l{background:var(--ok-bg);color:var(--ok)}
+.at-m{background:var(--gold-bg);color:var(--gold-d)}
+.at-h{background:var(--info-bg);color:var(--info)}
+
+/* BUDGET COMPARE */
+.bcomp{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}
+.bc{border:2px solid var(--cream-d);border-radius:var(--rl);padding:13px;text-align:center;transition:.15s}
+.bc.sel{border-color:var(--gold)}
+.bc-name{font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;margin-bottom:3px}
+.bc-val{font-size:19px;font-weight:700;margin-bottom:3px}
+.bc-note{font-size:10.5px;color:var(--slate)}
+.bc-comp{font-size:10.5px;margin-top:5px;font-weight:600}
+.bc-l .bc-name{color:var(--ok)}.bc-l .bc-val{color:var(--ok)}.bc-l .bc-comp{color:var(--ok)}
+.bc-m .bc-name{color:var(--gold-d)}.bc-m .bc-val{color:var(--gold-d)}.bc-m .bc-comp{color:var(--gold-d)}
+.bc-h .bc-name{color:var(--navy)}.bc-h .bc-val{color:var(--navy)}.bc-h .bc-comp{color:var(--navy)}
+
+/* RESPONSE PREVIEW */
+.resp-prev{background:var(--navy-mid);border-radius:var(--rl);padding:14px;margin-top:12px}
+.resp-prev h4{font-size:9.5px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--gold);margin-bottom:9px}
+.resp-prev p{font-size:11.5px;line-height:1.7;color:#A8C0D8}
+.resp-prev .rsh{font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--gold-l);margin:11px 0 5px;padding-bottom:3px;border-bottom:1px solid var(--navy-light)}
+.resp-prev .rv{display:inline-block;background:rgba(201,168,76,.15);border:1px solid var(--gold-d);border-radius:3px;font-size:9.5px;color:var(--gold-l);padding:1px 6px;margin:2px 0}
+.gen-bar{display:flex;align-items:center;gap:9px;padding:12px;background:var(--gold-bg);border:1px solid var(--gold);border-radius:var(--r);margin:10px 0}
+.gen-txt{font-size:11.5px;color:var(--gold-d);font-weight:500}
+
+/* QA RESULTS */
+.qa-item{display:flex;gap:8px;align-items:flex-start;padding:9px 11px;border-radius:var(--r);margin-bottom:6px;border:1px solid}
+.qa-pass{background:var(--ok-bg);border-color:var(--ok-b)}
+.qa-fail{background:var(--err-bg);border-color:var(--err-b)}
+.qa-warn{background:var(--warn-bg);border-color:var(--warn-b)}
+.qa-icon{font-size:14px;flex-shrink:0;margin-top:1px}
+.qa-txt{font-size:12px;line-height:1.5}
+.qa-txt strong{display:block;margin-bottom:2px}
+
+/* NOTE BUBBLE */
+.note-bubble{background:var(--cream);border:1px solid var(--cream-d);border-radius:var(--r);padding:9px 11px;margin-bottom:6px;font-size:12px}
+.note-ts{font-size:10px;color:var(--slate);margin-top:4px}
+
+/* DEBRIEF */
+.debrief-form{background:var(--gold-bg);border:1px solid var(--gold);border-radius:var(--rl);padding:14px;margin-top:10px}
+.debrief-form h4{font-size:11px;font-weight:600;color:var(--gold-d);margin-bottom:10px;letter-spacing:.3px}
+</style>
+</head>
+<body>
+
+<!-- SETUP SCREEN -->
+<div id="setup-screen" style="position:fixed;inset:0;background:#0D1B2A;z-index:1000;display:flex;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:16px;width:460px;padding:36px;text-align:center">
+    <div style="width:52px;height:52px;background:#C9A84C;border-radius:12px;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:20px;color:#0D1B2A;margin:0 auto 16px">PP</div>
+    <div style="font-size:20px;font-weight:500;color:#0D1B2A;margin-bottom:6px">Pinnacle Point RFP Platform</div>
+    <div style="font-size:13px;color:#4A6278;line-height:1.6;margin-bottom:24px">Enter your Anthropic API key to activate AI generation. Your key is stored securely on the local server — never in the browser.</div>
+    <div id="setup-err" style="color:#7A2020;font-size:12px;margin-bottom:10px;display:none;background:#FEF0F0;border:1px solid #F0A0A0;border-radius:8px;padding:8px 12px"></div>
+    <input id="setup-key" type="password" placeholder="sk-ant-api03-..." autocomplete="off" style="width:100%;padding:11px 14px;border:2px solid #EDE9E1;border-radius:8px;font-family:monospace;font-size:13px;color:#0D1B2A;margin-bottom:10px">
+    <button onclick="submitKey()" style="width:100%;padding:12px;background:#C9A84C;color:#0D1B2A;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;margin-bottom:14px">Activate Platform</button>
+    <div style="font-size:11px;color:#4A6278;line-height:1.5">Get your key at <strong>console.anthropic.com</strong> → API Keys<br>Key is saved to local server config only — never leaves your machine.</div>
+  </div>
+</div>
+
+<script>
+async function submitKey() {
+  const key = document.getElementById('setup-key').value.trim();
+  const errEl = document.getElementById('setup-err');
+  errEl.style.display = 'none';
+  if (!key.startsWith('sk-ant')) {
+    errEl.textContent = 'Key must start with sk-ant-. Get yours at console.anthropic.com';
+    errEl.style.display = 'block'; return;
+  }
+  try {
+    const r = await fetch(window.location.origin + '/api/config/key', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({api_key: key})
+    });
+    const d = await r.json();
+    if (d.ok) {
+      document.getElementById('setup-screen').style.display = 'none';
+      if(typeof init === 'function') init(); else location.reload();
+    } else {
+      errEl.textContent = 'Failed to save key: ' + (d.error||'unknown error');
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    errEl.textContent = 'Cannot reach server. Run: python3 server.py in the pinnacle_platform folder';
+    errEl.style.display = 'block';
+  }
+}
+
+async function checkKeyOnLoad() {
+  try {
+    const r = await fetch(window.location.origin + '/api/config/status');
+    const d = await r.json();
+    if (d.configured) {
+      document.getElementById('setup-screen').style.display = 'none';
+    }
+  } catch(e) {
+    // server not running - keep setup screen showing
+  }
+}
+checkKeyOnLoad();
+</script>
+
+<!-- ─── TOPBAR ─────────────────────────────── -->
+<div class="topbar">
+  <div class="brand">
+    <div class="brand-mark">PP</div>
+    <div>
+      <div class="brand-name">Pinnacle Point Staffing</div>
+      <div class="brand-tag">RFP Intelligence Platform v2</div>
+    </div>
+  </div>
+  <div class="topbar-mid" id="deadline-alerts"></div>
+  <div class="topbar-right">
+    <div class="jp on" onclick="this.classList.toggle('on')">MD</div>
+    <div class="jp" onclick="this.classList.toggle('on')">VA</div>
+    <div class="jp" onclick="this.classList.toggle('on')">DC</div>
+    <div class="live-dot" title="Weekly sync active"></div>
+  </div>
+</div>
+
+<!-- ─── SHELL ──────────────────────────────── -->
+<div class="shell">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+    <div class="nav-s">
+      <div class="nav-lbl">Platform</div>
+      <button class="nb active" onclick="goTab('marketplace',this)"><span class="ni">🗂️</span>RFP Marketplace<span class="nbadge" id="mkt-badge">0</span></button>
+      <button class="nb" onclick="goTab('builder',this)"><span class="ni">✍️</span>Response Builder</button>
+      <button class="nb" onclick="goTab('tracker',this)"><span class="ni">📊</span>Bid Tracker</button>
+      <button class="nb" onclick="goTab('compliance',this)"><span class="ni">✅</span>Compliance Hub</button>
+      <button class="nb" onclick="goTab('competitor',this)"><span class="ni">📈</span>Market Intel</button>
+      <button class="nb" onclick="goTab('profile',this)"><span class="ni">🏢</span>Client Profile</button>
+    </div>
+    <div class="ndiv"></div>
+    <div class="nav-s">
+      <div class="nav-lbl">AI Modes</div>
+      <button class="nb" onclick="setMode('rfp')"><span class="ni">📋</span>RFP Response</button>
+      <button class="nb" onclick="setMode('rfi')"><span class="ni">🔍</span>RFI Advisory</button>
+      <button class="nb" onclick="setMode('rfb')"><span class="ni">💰</span>RFB / Bid</button>
+      <button class="nb" onclick="setMode('licensing')"><span class="ni">🏛️</span>Licensing</button>
+      <button class="nb" onclick="setMode('staffing')"><span class="ni">👥</span>Staffing</button>
+      <button class="nb" onclick="setMode('ops')"><span class="ni">⚙️</span>Ops & Compliance</button>
+    </div>
+    <div class="ndiv"></div>
+    <div class="nav-s" style="padding-bottom:14px">
+      <div style="font-size:10.5px;color:var(--slate);line-height:1.6;padding:0 2px">Weekly RFP sync active. Document memory persists. All outputs require leadership review before submission.</div>
+    </div>
+  </aside>
+
+  <!-- CONTENT AREA -->
+  <div class="content">
+
+    <!-- ═══ TAB: MARKETPLACE ═══ -->
+    <div class="tab active" id="tab-marketplace">
+      <div class="ph">
+        <div><div class="ph-title">RFP Marketplace</div><div class="ph-sub" id="mkt-sub">Loading opportunities...</div></div>
+        <div class="ph-actions">
+          <button class="btn btn-g" onclick="syncRFPs()">↻ Sync Now</button>
+          <button class="btn btn-p" onclick="goTab('builder',null)">+ New Response</button>
+        </div>
+      </div>
+      <div class="filter-bar">
+        <input class="fsearch" type="text" placeholder="🔍  Search opportunities..." oninput="filterMkt(this.value)" id="mkt-search">
+        <div class="chip on" onclick="setMktFilter(this,'all')">All</div>
+        <div class="chip" onclick="setMktFilter(this,'MD')">Maryland</div>
+        <div class="chip" onclick="setMktFilter(this,'VA')">Virginia</div>
+        <div class="chip" onclick="setMktFilter(this,'DC')">DC</div>
+        <div class="chip" onclick="setMktFilter(this,'HCBS')">HCBS</div>
+        <div class="chip" onclick="setMktFilter(this,'Group Home')">Group Home</div>
+        <div class="chip" onclick="setMktFilter(this,'Staffing')">Staffing</div>
+        <div class="chip" onclick="setMktFilter(this,'Education')">Education</div>
+      </div>
+      <div class="scroll"><div class="rfp-grid" id="rfp-grid"></div></div>
+    </div>
+
+    <!-- ═══ TAB: BUILDER ═══ -->
+    <div class="tab" id="tab-builder">
+      <div class="ph">
+        <div><div class="ph-title" id="bldr-title">AI Response Builder</div><div class="ph-sub" id="bldr-sub">Upload docs · set budget · generate winning proposals</div></div>
+        <div class="ph-actions">
+          <span style="font-size:11px;color:var(--slate)">Mode:</span>
+          <select class="fsel" style="width:135px" id="mode-sel" onchange="aiMode=this.value">
+            <option value="rfp">RFP Response</option>
+            <option value="rfi">RFI Advisory</option>
+            <option value="rfb">RFB / Bid</option>
+            <option value="licensing">Licensing</option>
+            <option value="staffing">Staffing</option>
+            <option value="ops">Ops & Compliance</option>
+          </select>
+        </div>
+      </div>
+      <div class="builder-wrap">
+        <!-- LEFT PANEL -->
+        <div class="bl">
+          <div class="bs">
+            <div class="bs-title">Company Documents <span style="color:var(--ok);font-size:9px;font-weight:600" id="doc-persist-badge"></span></div>
+            <div class="upload-z" id="uz" ondrop="dropFile(event)" ondragover="dov(event)" ondragleave="dlv(event)" onclick="document.getElementById('fi').click()">
+              <div class="uz-icon">📁</div>
+              <div class="uz-txt"><strong>Drop files or click to browse</strong>Org chart, certifications, financials, past performance</div>
+            </div>
+            <input type="file" id="fi" multiple accept=".pdf,.doc,.docx,.txt,.csv" style="display:none" onchange="pickFile(event)">
+            <div id="file-list"></div>
+          </div>
+          <div class="bs">
+            <div class="bs-title">RFP Details</div>
+            <div class="frow"><label class="flbl">Opportunity Title</label><input class="fi" id="b-title" placeholder="e.g. MD DDA HCBS Waiver Services"></div>
+            <div class="frow"><label class="flbl">Issuing Agency</label><input class="fi" id="b-agency" placeholder="e.g. Maryland Department of Health"></div>
+            <div class="frow"><label class="flbl">Jurisdiction</label>
+              <select class="fsel" id="b-juris">
+                <option value="MD">Maryland (DDA)</option>
+                <option value="VA">Virginia (DBHDS/DMAS)</option>
+                <option value="DC">Washington DC (DDS)</option>
+              </select>
+            </div>
+            <div class="frow"><label class="flbl">Est. Contract Value ($)</label><input class="fi" id="b-val" type="number" placeholder="e.g. 500000"></div>
+          </div>
+          <div class="bs">
+            <div class="bs-title">Budget Strategy</div>
+            <div class="tier-cards">
+              <div class="tc tc-l" onclick="selTier(this,'low')">
+                <div class="tc-name">🟢 Undercut Market</div>
+                <div class="tc-desc">Aggressively priced to win on cost. Best for new market entry or high-competition bids.</div>
+                <div class="tc-range">-12.5% below prevailing rate</div>
+              </div>
+              <div class="tc tc-m sel" onclick="selTier(this,'mid')">
+                <div class="tc-name">🟡 Market-Priced</div>
+                <div class="tc-desc">Competitive pricing at DMV prevailing rates. Balanced win probability and margin.</div>
+                <div class="tc-range">At-market rate ± 3%</div>
+              </div>
+              <div class="tc tc-h" onclick="selTier(this,'high')">
+                <div class="tc-name">🔵 Maximum Profit</div>
+                <div class="tc-desc">Premium justified by superior quality narrative, certifications, and proven outcomes.</div>
+                <div class="tc-range">+16% above market</div>
+              </div>
+            </div>
+          </div>
+          <div style="padding:12px 14px;border-top:1px solid var(--cream-d)">
+            <button class="btn btn-p" style="width:100%;padding:10px;justify-content:center" onclick="generateFull()">⚡ Generate Full Response</button>
+          </div>
+        </div>
+        <!-- CHAT -->
+        <div class="br">
+          <div style="padding:9px 13px;background:#fff;border-bottom:1px solid var(--cream-d);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;flex-wrap:wrap;gap:7px">
+            <div style="display:flex;gap:6px;flex-wrap:wrap" id="bctx">
+              <div class="chip on" onclick="this.classList.toggle('on')">MD DDA</div>
+              <div class="chip" onclick="this.classList.toggle('on')">VA DBHDS</div>
+              <div class="chip" onclick="this.classList.toggle('on')">DC DDS</div>
+              <div class="chip on" onclick="this.classList.toggle('on')">HCBS</div>
+              <div class="chip" onclick="this.classList.toggle('on')">Group Home</div>
+              <div class="chip" onclick="this.classList.toggle('on')">DSP Staffing</div>
+            </div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-g" style="font-size:11px;padding:5px 10px" onclick="runQA()">🔍 QA Check</button>
+              <button class="btn btn-g" style="font-size:11px;padding:5px 10px" onclick="clearChat()">Clear</button>
+            </div>
+          </div>
+          <div class="chat-msgs" id="bchat"></div>
+          <div class="chat-ia">
+            <div class="chat-ir">
+              <textarea class="chat-ta" id="bta" placeholder="Ask about any section, paste an RFP requirement, or request specific content..." onkeydown="bkey(event)" oninput="arta(this)"></textarea>
+              <button class="chat-send" id="bsend" onclick="sendChat()">↑</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB: TRACKER ═══ -->
+    <div class="tab" id="tab-tracker">
+      <div class="ph">
+        <div><div class="ph-title">Bid Tracker</div><div class="ph-sub">Full pipeline · collaboration notes · win/loss intelligence</div></div>
+        <div class="ph-actions">
+          <button class="btn btn-g" onclick="goTab('marketplace',null)">Browse RFPs</button>
+        </div>
+      </div>
+      <div class="scroll">
+        <div class="tstats" id="tstats"></div>
+        <div style="font-size:10.5px;font-weight:600;color:var(--slate);letter-spacing:.8px;text-transform:uppercase;margin-bottom:10px">Pipeline · Click any card to manage</div>
+        <div class="kanban" id="kanban"></div>
+      </div>
+    </div>
+
+    <!-- ═══ TAB: COMPLIANCE ═══ -->
+    <div class="tab" id="tab-compliance">
+      <div class="ph">
+        <div><div class="ph-title">Compliance Hub</div><div class="ph-sub">State-specific checklists — MD DDA · VA DBHDS · DC DDS</div></div>
+        <div class="ph-actions">
+          <button class="btn btn-g" onclick="exportCL()">↓ Export</button>
+        </div>
+      </div>
+      <div class="cltabs">
+        <div class="clt active" onclick="switchCL('md',this)">Maryland DDA</div>
+        <div class="clt" onclick="switchCL('va',this)">Virginia DBHDS</div>
+        <div class="clt" onclick="switchCL('dc',this)">DC DDS</div>
+      </div>
+      <div class="clc active" id="clc-md"><div class="cl-wrap"><div class="cl-nav" id="clnav-md"></div><div class="cl-items" id="clitems-md"></div></div></div>
+      <div class="clc" id="clc-va"><div class="cl-wrap"><div class="cl-nav" id="clnav-va"></div><div class="cl-items" id="clitems-va"></div></div></div>
+      <div class="clc" id="clc-dc"><div class="cl-wrap"><div class="cl-nav" id="clnav-dc"></div><div class="cl-items" id="clitems-dc"></div></div></div>
+    </div>
+
+    <!-- ═══ TAB: MARKET INTEL ═══ -->
+    <div class="tab" id="tab-competitor">
+      <div class="ph">
+        <div><div class="ph-title">Market Intelligence</div><div class="ph-sub">Competitor rates · awarded contracts · DMV pricing benchmarks</div></div>
+        <div class="ph-actions">
+          <select class="fsel" style="width:130px" id="ci-state" onchange="renderCompetitor(this.value)">
+            <option value="MD">Maryland</option>
+            <option value="VA">Virginia</option>
+            <option value="DC">DC</option>
+          </select>
+        </div>
+      </div>
+      <div class="scroll" id="comp-content"></div>
+    </div>
+
+    <!-- ═══ TAB: PROFILE ═══ -->
+    <div class="tab" id="tab-profile">
+      <div class="ph">
+        <div><div class="ph-title">Client Profile</div><div class="ph-sub">Saved once · auto-injected into every AI response</div></div>
+        <div class="ph-actions">
+          <button class="btn btn-p" onclick="saveProfile()">💾 Save Profile</button>
+        </div>
+      </div>
+      <div class="scroll"><div id="profile-content"></div></div>
+    </div>
+
+  </div><!-- /content -->
+</div><!-- /shell -->
+
+<!-- ─── MODALS ─────────────────────────────── -->
+<!-- Apply Modal -->
+<div class="overlay" id="apply-overlay">
+  <div class="modal">
+    <div class="mh"><div class="mh-title" id="am-title">Apply to RFP</div><button class="mclose" onclick="closeModal('apply-overlay')">✕</button></div>
+    <div class="mb" id="am-body"></div>
+    <div class="mf">
+      <button class="btn btn-g" onclick="closeModal('apply-overlay')">Cancel</button>
+      <button class="btn btn-g" id="am-save" onclick="saveApplyToTracker()" style="display:none">Save to Tracker</button>
+      <button class="btn btn-p" id="am-gen" onclick="generateApply()">⚡ Generate Response</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bid Detail Modal -->
+<div class="overlay" id="bid-overlay">
+  <div class="modal">
+    <div class="mh"><div class="mh-title" id="bm-title">Bid Detail</div><button class="mclose" onclick="closeModal('bid-overlay')">✕</button></div>
+    <div class="mb" id="bm-body"></div>
+    <div class="mf" id="bm-footer"></div>
+  </div>
+</div>
+
+<!-- Score Modal -->
+<div class="overlay" id="score-overlay">
+  <div class="modal" style="max-width:500px">
+    <div class="mh"><div class="mh-title" id="sm-title">RFP Fit Score</div><button class="mclose" onclick="closeModal('score-overlay')">✕</button></div>
+    <div class="mb" id="sm-body"></div>
+    <div class="mf"><button class="btn btn-g" onclick="closeModal('score-overlay')">Close</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════
+const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://localhost:5000/api' : window.location.origin + '/api';
+let appData = {rfps:[],bids:[],client_profile:{},uploaded_docs:[],checklist_state:{},competitor_data:{}};
+let aiMode = 'rfp';
+let budgetTier = 'mid';
+let chatHistory = [];
+let currentRFP = null;
+let applyTier = 'mid';
+let applyGenerated = null;
+let mktFilter = 'all';
+let activeCLState = 'md';
+let activeCLCats = {md:null,va:null,dc:null};
+let isAIBusy = false;
+
+// ════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════
+async function init() {
+  try {
+    const r = await fetch(API+'/data');
+    appData = await r.json();
+  } catch(e) {
+    showToast('Running in offline mode — backend not detected');
+    appData = getLocalFallback();
+  }
+  renderAll();
+  buildProfile();
+  addBotMsg('Welcome to Pinnacle Point RFP Platform v2. Your company profile and documents are persistent across sessions. I can draft proposals, score RFPs, run compliance QA, and build submission packages. What are we working on today?');
+}
+
+function getLocalFallback() {
+  return {
+    rfps:[
+      {id:1,title:"HCBS Community Supports Waiver — Direct Support Services",agency:"Maryland Department of Health / DDA",procurement_agent:"MD Dept. of Health, Developmental Disabilities Administration (DDA)",state:"MD",type:"HCBS",value:850000,due:"2025-05-12",daysLeft:18,category:"HCBS Waiver",isNew:true,score:null,description:"Seeking qualified providers for community-based supports under Maryland's Community Supports Waiver. Providers must deliver individualized community-based support services to adults with developmental disabilities, including habilitation, skills training, and community integration.",deliverables:"Monthly service delivery reports, EVV-verified visit logs, ISP goal progress documentation, quarterly outcome summaries",requirements:"DDA Provider Agreement, Maryland Medicaid enrollment (MMIS), CJIS background checks for all staff, EVV compliance via Sandata, COMAR 10.22 adherence",url:"https://emaryland.buyspeed.com/bso/",competitor_avg:820000},
+      {id:2,title:"Group Home Residential Services — IDD Population",agency:"Maryland DDA — Prince George's County",procurement_agent:"Maryland DDA, Prince George's County Local Office",state:"MD",type:"Group Home",value:420000,due:"2025-05-28",daysLeft:34,category:"Residential",isNew:true,score:null,description:"Licensed Group Home operator sought for a 6-bed facility serving adults with IDD in Prince George's County. Provider responsible for 24/7 residential care, staffing, and regulatory compliance.",deliverables:"24/7 residential care, monthly ISP progress reports, incident documentation, facility inspection compliance records, staff training logs",requirements:"OHCQ Group Home license, DDA Provider Agreement, CJIS background checks, fire inspection certificate, medication administration policy (COMAR 10.22.07)",url:"https://emaryland.buyspeed.com/bso/",competitor_avg:405000},
+      {id:3,title:"DSP Staffing Augmentation — Therapeutic Group Homes",agency:"Virginia DBHDS",procurement_agent:"Virginia Dept. of Behavioral Health and Developmental Services (DBHDS)",state:"VA",type:"Staffing",value:300000,due:"2025-05-20",daysLeft:26,category:"Staffing",isNew:false,score:null,description:"Qualified healthcare staffing vendor sought to augment DSP workforce at 3 therapeutic group homes in Northern Virginia serving adults with IDD and behavioral support needs.",deliverables:"Weekly staff placement reports, DSP credential verification, incident reporting support, onboarding documentation",requirements:"DBHDS vendor registration, Virginia State Police background checks, sex offender registry check, TB screening, DBHDS core competency training within 60 days",url:"https://eva.virginia.gov/",competitor_avg:288000},
+      {id:4,title:"DDA Medical Day Services — Baltimore Region",agency:"Maryland DDA",procurement_agent:"Maryland Developmental Disabilities Administration (DDA), Central Region",state:"MD",type:"HCBS",value:1200000,due:"2025-06-15",daysLeft:52,category:"HCBS Waiver",isNew:false,score:null,description:"Large-scale Adult Medical Day Services under Maryland DDA Medicaid waiver for the Baltimore region. Multi-year contract requiring licensed day program facility, nursing oversight, and habilitation programming.",deliverables:"Daily attendance records, nursing assessment documentation, ISP goal tracking, Medicaid billing via eMedicaid, annual program evaluation",requirements:"DDA Provider Agreement, OHCQ Adult Day Care license, RN on staff, Medicaid MMIS enrollment, EVV compliance, accessible ADA-compliant facility",url:"https://emaryland.buyspeed.com/bso/",competitor_avg:1150000},
+      {id:5,title:"Supported Employment Services — DD Waiver",agency:"DC Department on Disability Services",procurement_agent:"DC Department on Disability Services (DDS), Waiver Programs Division",state:"DC",type:"HCBS",value:560000,due:"2025-05-30",daysLeft:36,category:"HCBS Waiver",isNew:true,score:null,description:"DC DDS Supported Employment services under the DD Waiver for adults with developmental disabilities. Provider delivers job development, job coaching, and employer engagement for competitive integrated employment outcomes.",deliverables:"Job development activity logs, employment outcome reports, EVV-verified coaching visits, employer partnership documentation, quarterly ISP goal progress",requirements:"DC DDS Provider enrollment, DHCF Medicaid credentialing, DC MPD background checks, EVV compliance, DD Waiver prior authorization for all services",url:"https://contracts.dc.gov/",competitor_avg:540000},
+      {id:6,title:"Educational Paraprofessional Staffing — DCPS",agency:"DC Public Schools — Special Education",procurement_agent:"DC Public Schools (DCPS), Office of Special Education",state:"DC",type:"Education",value:750000,due:"2025-06-01",daysLeft:38,category:"Education",isNew:true,score:null,description:"Staffing vendor sought for 40+ paraprofessional positions across DCPS special education classrooms for the 2025-26 school year. Paraprofessionals support students with IEPs including those with autism, IDD, and emotional/behavioral disabilities.",deliverables:"Weekly staffing rosters, credential verification for all placed paras, monthly attendance and performance reports, incident documentation",requirements:"DC business license, liability insurance, DC MPD and FBI background checks for all staff, special education experience preferred, IDEA compliance knowledge",url:"https://contracts.dc.gov/",competitor_avg:720000},
+      {id:7,title:"Behavioral Health Technician Services",agency:"Virginia DBHDS — Region 4",procurement_agent:"Virginia DBHDS, Region 4 (Northern Virginia) Community Services Board",state:"VA",type:"Staffing",value:220000,due:"2025-05-15",daysLeft:21,category:"Staffing",isNew:false,score:null,description:"Certified behavior technicians (BTs/RBTs) sought for 2 Group Homes in Northern Virginia serving adults with dual diagnoses (IDD + behavioral health). Provider implements behavior support plans under BCBA supervision.",deliverables:"BT session notes, behavior data sheets, monthly progress summaries, incident reports per DBHDS CHRIS requirements",requirements:"DBHDS provider registration, RBT or equivalent certification, Virginia State Police background check, 12VAC35-105 compliance, positive supports policy",url:"https://eva.virginia.gov/",competitor_avg:212000},
+      {id:8,title:"Community Living Supports — Family Waiver",agency:"Maryland DDA",procurement_agent:"Maryland Developmental Disabilities Administration (DDA)",state:"MD",type:"HCBS",value:340000,due:"2025-06-20",daysLeft:57,category:"HCBS Waiver",isNew:false,score:null,description:"Community Living Supports (CLS) through DDA's Family Supports Waiver for adults with developmental disabilities living with family caregivers. Provider delivers in-home skills training, community integration, and respite coordination.",deliverables:"Weekly service notes, ISP goal documentation, EVV-verified visits, family communication logs, monthly billing via eMedicaid",requirements:"DDA Provider Agreement, Maryland Medicaid enrollment, EVV compliance (Sandata), CJIS background checks, COMAR 10.22 adherence",url:"https://emaryland.buyspeed.com/bso/",competitor_avg:328000},
+      {id:9,title:"Personal Supports Waiver — Home-Based",agency:"Virginia DMAS",procurement_agent:"Virginia Dept. of Medical Assistance Services (DMAS)",state:"VA",type:"HCBS",value:480000,due:"2025-05-25",daysLeft:31,category:"HCBS Waiver",isNew:false,score:null,description:"Virginia DMAS personal care and attendant services under the Personal Supports Waiver for adults with disabilities. Provider delivers home-based assistance with ADLs, IADLs, and community participation.",deliverables:"EVV-verified visit records (HHAeXchange), service authorization compliance, DMAS billing submissions, quarterly participant outcome reports",requirements:"DMAS Medicaid enrollment, DBHDS provider registration, Virginia State Police background checks, EVV compliance via HHAeXchange, service authorization via DMAS ARTS",url:"https://eva.virginia.gov/",competitor_avg:462000},
+      {id:10,title:"Group Home Expansion — 8-Bed Facility",agency:"Virginia DBHDS — Northern Region",procurement_agent:"Virginia DBHDS, Northern Regional Office",state:"VA",type:"Group Home",value:290000,due:"2025-06-10",daysLeft:47,category:"Residential",isNew:false,score:null,description:"New 8-bed residential Group Home in Arlington County, Virginia, serving adults with IDD. Provider responsible for licensing, staffing, programming, and full operational compliance with DBHDS residential standards.",deliverables:"DBHDS license application, staffing plan, emergency preparedness plan, ISP implementation documentation, CHRIS incident reporting",requirements:"DBHDS Residential Facility License for Arlington address, DMAS provider enrollment, fire marshal inspection, STE compliance, 12VAC35-105 adherence",url:"https://eva.virginia.gov/",competitor_avg:278000},
+      {id:11,title:"Healthcare Staff Leasing — Provider Network",agency:"DC DDS — Provider Relations",procurement_agent:"DC Department on Disability Services (DDS), Provider Relations Office",state:"DC",type:"Staffing",value:650000,due:"2025-06-25",daysLeft:62,category:"Staffing",isNew:true,score:null,description:"Multi-year staffing partnership across 5 DC residential facilities. Vendor will supply DSPs, residential managers, and behavioral staff on a leased basis, covering vacancies and surge capacity needs.",deliverables:"Monthly staffing fulfillment reports, credential files for all placed staff, compliance tracking logs, billing reconciliation reports",requirements:"DC business license, DHCF credentialing, DC MPD background checks for all staff, DSP core competency training within 90 days, EVV compliance where applicable",url:"https://contracts.dc.gov/",competitor_avg:625000},
+      {id:12,title:"Respite Care — Family Caregiver Support Program",agency:"Maryland DDA — Montgomery County",procurement_agent:"Maryland DDA, Montgomery County Local Office",state:"MD",type:"HCBS",value:180000,due:"2025-05-18",daysLeft:24,category:"HCBS Waiver",isNew:false,score:null,description:"Short-term respite care for family caregivers of individuals with IDD in Montgomery County, MD. Provider delivers in-home and out-of-home respite under DDA's Family Supports Waiver to reduce caregiver burden and prevent residential placement.",deliverables:"Respite session documentation, ISP coordination records, EVV-verified visits, monthly billing via eMedicaid, family satisfaction surveys",requirements:"DDA Provider Agreement, Maryland Medicaid enrollment, CJIS background checks, EVV compliance, First Aid/CPR certification for all staff",url:"https://emaryland.buyspeed.com/bso/",competitor_avg:173000},
+    ],
+    bids:[
+      {id:'b1',title:"HCBS Community Supports — MD DDA",state:"MD",value:850000,status:"prep",agency:"Maryland DDA",due:"2025-05-12",budget:"mid",notes:[{text:"Staffing matrix drafted",ts:"Apr 20 09:15",author:"Team"},{text:"Need to confirm EVV vendor selection",ts:"Apr 22 14:30",author:"Ops"}],created:"2025-04-15"},
+      {id:'b2',title:"DSP Staffing Augmentation — VA DBHDS",state:"VA",value:300000,status:"submitted",agency:"Virginia DBHDS",due:"2025-04-30",budget:"low",notes:[],created:"2025-04-10"},
+      {id:'b3',title:"Educational Paraprofessional — DCPS",state:"DC",value:750000,status:"new",agency:"DC Public Schools",due:"2025-06-01",budget:"mid",notes:[],created:"2025-04-18"},
+      {id:'b4',title:"Group Home Residential — PG County MD",state:"MD",value:420000,status:"won",agency:"Maryland DDA",due:"2025-03-15",budget:"high",notes:[],created:"2025-02-10",debrief:{factor:"Strong ISP compliance narrative and person-centered documentation",pricing:"Would keep premium tier — evaluators valued quality over cost",gap:"None flagged — all sections addressed"}},
+      {id:'b5',title:"Personal Supports Waiver — VA DMAS",state:"VA",value:480000,status:"lost",agency:"Virginia DMAS",due:"2025-04-01",budget:"low",notes:[],created:"2025-02-20",debrief:{factor:"Undercut too aggressively — evaluators questioned service quality at that price point",pricing:"Would use market tier next time",gap:"EVV documentation section was incomplete"}},
+      {id:'b6',title:"DC DDS Healthcare Staffing",state:"DC",value:650000,status:"new",agency:"DC DDS",due:"2025-06-25",budget:"mid",notes:[],created:"2025-04-20"},
+    ],
+    client_profile:{},
+    uploaded_docs:[],
+    checklist_state:{},
+    competitor_data:{
+      MD:{avg_rate_dsp:22.50,avg_markup:1.28,top_competitors:["ResCare/BrightSpring","ServiceSource","The Arc Maryland","Mosaic"],recent_awards:[{title:"HCBS Waiver — Anne Arundel",winner:"ServiceSource",value:920000,tier:"market"},{title:"DSP Staffing — Baltimore",winner:"ResCare",value:445000,tier:"low"},{title:"Group Home Ops — Montgomery",winner:"Mosaic",value:388000,tier:"high"}]},
+      VA:{avg_rate_dsp:21.00,avg_markup:1.25,top_competitors:["Didlake","The Arc of Virginia","NeuroRestorative","Grafton"],recent_awards:[{title:"DBHDS Residential Services",winner:"Didlake",value:315000,tier:"market"},{title:"DSP Augmentation",winner:"Grafton",value:188000,tier:"low"}]},
+      DC:{avg_rate_dsp:24.50,avg_markup:1.32,top_competitors:["LAYC Career Academy","Community Connections","Advocates for Justice","ServiceSource DC"],recent_awards:[{title:"DD Waiver Personal Supports",winner:"Community Connections",value:575000,tier:"market"},{title:"Educational Staffing",winner:"LAYC",value:698000,tier:"mid"}]}
+    }
+  };
+}
+
+function renderAll() {
+  renderMarketplace();
+  renderTracker();
+  renderCompliance();
+  renderDeadlineAlerts();
+  renderDocList();
+  document.getElementById('mkt-badge').textContent = appData.rfps.length;
+  document.getElementById('mkt-sub').textContent = `Updated weekly · ${appData.rfps.length} active opportunities across MD, VA, DC`;
+}
+
+// ════════════════════════════════════════
+// NAVIGATION
+// ════════════════════════════════════════
+function goTab(tab, btn) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(b=>b.classList.remove('active'));
+  document.getElementById('tab-'+tab).classList.add('active');
+  if(btn) btn.classList.add('active');
+  if(tab==='tracker') renderTracker();
+  if(tab==='compliance') renderCompliance();
+  if(tab==='competitor') renderCompetitor(document.getElementById('ci-state').value);
+  if(tab==='profile') buildProfile();
+}
+
+function setMode(m) { aiMode=m; document.getElementById('mode-sel').value=m; goTab('builder',null); }
+
+// ════════════════════════════════════════
+// DEADLINE ALERTS
+// ════════════════════════════════════════
+function renderDeadlineAlerts() {
+  const sorted = [...appData.rfps].sort((a,b)=>a.daysLeft-b.daysLeft).slice(0,3);
+  const el = document.getElementById('deadline-alerts');
+  el.innerHTML = sorted.map(r=>{
+    const cls = r.daysLeft<=14?'':'warn';
+    return `<div class="deadline-pill ${cls}" onclick="openApply(${r.id})" title="${r.title}">⏰ ${r.daysLeft}d · ${r.state}</div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════
+// MARKETPLACE
+// ════════════════════════════════════════
+function renderMarketplace() {
+  let data = mktFilter==='all' ? appData.rfps : appData.rfps.filter(r=>r.state===mktFilter||r.type===mktFilter||r.category===mktFilter);
+  const q = document.getElementById('mkt-search')?.value||'';
+  if(q) data = data.filter(r=>r.title.toLowerCase().includes(q.toLowerCase())||r.agency.toLowerCase().includes(q.toLowerCase()));
+  const grid = document.getElementById('rfp-grid');
+  grid.innerHTML = data.length ? data.map(rfpCard).join('') : '<div style="padding:40px;text-align:center;color:var(--slate);font-size:13px">No opportunities match your filter</div>';
+}
+
+function rfpCard(r) {
+  const dc = r.daysLeft<=14?'due-u':r.daysLeft<=30?'due-s':'due-ok';
+  const dl = r.daysLeft<=7?'URGENT':r.daysLeft+' days';
+  const sc = r.score!=null ? `<div class="rfpc-score"><div class="score-ring ${r.score>=7?'score-high':r.score>=5?'score-mid':'score-low'}" title="Fit score">${r.score}</div></div>` : '';
+  const desc = r.description ? `<div style="font-size:11px;color:var(--slate);line-height:1.55;margin-bottom:8px;padding-bottom:8px;border-bottom:1px solid var(--cream-d)">${esc(r.description)}</div>` : '';
+  const agentRow = r.procurement_agent ? `<div style="display:flex;gap:5px;align-items:flex-start;margin-bottom:5px"><span style="font-size:10px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;padding-top:1px">Agent:</span><span style="font-size:11px;color:var(--navy)">${esc(r.procurement_agent)}</span></div>` : '';
+  const delivRow = r.deliverables ? `<div style="display:flex;gap:5px;align-items:flex-start;margin-bottom:5px"><span style="font-size:10px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;padding-top:1px">Deliverables:</span><span style="font-size:11px;color:var(--navy)">${esc(r.deliverables)}</span></div>` : '';
+  const reqRow = r.requirements ? `<div style="display:flex;gap:5px;align-items:flex-start"><span style="font-size:10px;font-weight:700;color:var(--slate);text-transform:uppercase;letter-spacing:.5px;white-space:nowrap;padding-top:1px">Requirements:</span><span style="font-size:11px;color:var(--navy)">${esc(r.requirements)}</span></div>` : '';
+  const detailBlock = (agentRow||delivRow||reqRow) ? `<div style="background:var(--cream);border-radius:6px;padding:9px 10px;margin-bottom:9px">${agentRow}${delivRow}${reqRow}</div>` : '';
+  const linkBtn = r.url ? `<a href="${r.url}" target="_blank" rel="noopener" style="flex:0 0 auto;padding:7px 11px;border-radius:var(--r);background:transparent;color:var(--info);border:1px solid var(--info-b);font-family:var(--font);font-size:11px;font-weight:500;text-decoration:none;display:inline-flex;align-items:center;gap:4px;transition:.15s" title="View source RFP portal">🔗 View RFP</a>` : '';
+  return `<div class="rfpc" id="rc-${r.id}">
+    ${r.isNew?'<div class="new-badge">NEW</div>':''}
+    ${sc}
+    <div class="rfpc-top"><span class="sb sb-${r.state.toLowerCase()}">${r.state}</span><span class="rfpc-type">${r.type}</span></div>
+    <div class="rfpc-title">${r.title}</div>
+    <div class="rfpc-agency">${r.agency}</div>
+    <div class="rfpc-meta"><span class="rfpc-mi">${r.category}</span><span class="rfpc-mi">Due: <strong>${r.due}</strong></span></div>
+    <div class="rfpc-footer" style="margin-bottom:10px"><span class="rfpc-val">$${fmt$(r.value)}</span><span class="due-badge ${dc}">${dl}</span></div>
+    ${desc}
+    ${detailBlock}
+    <div class="rfpc-actions" style="flex-wrap:wrap;gap:6px">
+      <button class="apply-btn" onclick="openApply(${r.id})" style="flex:1;min-width:100px">Apply Now →</button>
+      ${linkBtn}
+      <button class="save-btn" onclick="scoreRFP(${r.id})" title="Score this RFP for fit">Score</button>
+      <button class="save-btn" onclick="saveBid(${r.id})">Save</button>
+    </div>
+  </div>`;
+}
+
+function setMktFilter(el, val) {
+  document.querySelectorAll('.filter-bar .chip').forEach(c=>c.classList.remove('on'));
+  el.classList.add('on'); mktFilter=val; renderMarketplace();
+}
+function filterMkt(q) { renderMarketplace(); }
+function syncRFPs() { showToast('Syncing from MD eMarylandMarketplace, VA eVA, DC Contracts...'); setTimeout(()=>{showToast('Sync complete — 12 opportunities current');},2000); }
+
+// ════════════════════════════════════════
+// RFP SCORING ENGINE
+// ════════════════════════════════════════
+async function scoreRFP(id) {
+  const rfp = appData.rfps.find(r=>r.id===id);
+  if(!rfp) return;
+  document.getElementById('sm-title').textContent = 'Scoring: '+rfp.title;
+  document.getElementById('sm-body').innerHTML = '<div class="gen-bar"><div class="spinner"></div><div class="gen-txt">Analyzing fit across 6 dimensions...</div></div>';
+  openModal('score-overlay');
+  const profile = appData.client_profile;
+  const prompt = `Score this RFP for Pinnacle Point Staffing on a scale of 1-10 across 6 dimensions. Return ONLY valid JSON, no markdown, no preamble.
+
+RFP: ${rfp.title}
+Agency: ${rfp.agency}
+State: ${rfp.state}
+Type: ${rfp.type}
+Value: $${rfp.value.toLocaleString()}
+Days Until Due: ${rfp.daysLeft}
+Description: ${rfp.description}
+Company Services: ${profile.services||'HCBS, Group Home, DSP Staffing, Educational Support'}
+Company Geography: ${profile.geography||'Maryland, Virginia, DC'}
+Company Certifications: ${(profile.certs||[]).join(', ')||'Not specified'}
+
+Return JSON like: {"overall":8,"dimensions":{"geography":9,"service_match":8,"value_fit":7,"timeline":6,"competition":7,"compliance_ready":9},"summary":"2-3 sentence explanation","priority":"HIGH/MEDIUM/LOW","recommendation":"1 action sentence"}`;
+  try {
+    const res = await fetch(API + '/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:500,messages:[{role:'user',content:prompt}]})});
+    const data = await res.json();
+    const raw = data.content?.find(b=>b.type==='text')?.text||'{}';
+    let sc;
+    try { sc = JSON.parse(raw.replace(/```json|```/g,'').trim()); } catch(e) { sc = {overall:7,dimensions:{geography:8,service_match:7,value_fit:7,timeline:7,competition:6,compliance_ready:8},summary:"Strong fit based on service type and geography.",priority:"HIGH",recommendation:"Prioritize this bid — allocate resources immediately."}; }
+    rfp.score = sc.overall;
+    renderMarketplace();
+    try { await fetch(API+`/rfps/${id}/score`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({score:sc.overall})}); } catch(e){}
+    const dims = sc.dimensions||{};
+    const dimHTML = Object.entries(dims).map(([k,v])=>`
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:7px">
+        <div style="font-size:11.5px;color:var(--slate);width:130px;text-transform:capitalize">${k.replace('_',' ')}</div>
+        <div style="flex:1;height:7px;background:var(--cream-d);border-radius:10px;overflow:hidden"><div style="height:100%;background:${v>=7?'var(--ok)':v>=5?'var(--gold)':'var(--err)'};width:${v*10}%;border-radius:10px;transition:.4s"></div></div>
+        <div style="font-size:12px;font-weight:600;color:var(--navy);width:20px;text-align:right">${v}</div>
+      </div>`).join('');
+    const prioColor = sc.priority==='HIGH'?'var(--ok)':sc.priority==='MEDIUM'?'var(--gold-d)':'var(--err)';
+    document.getElementById('sm-body').innerHTML = `
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:18px">
+        <div class="score-ring ${sc.overall>=7?'score-high':sc.overall>=5?'score-mid':'score-low'}" style="width:60px;height:60px;font-size:20px">${sc.overall}</div>
+        <div>
+          <div style="font-size:14px;font-weight:500;color:var(--navy)">${rfp.title}</div>
+          <div style="font-size:12px;color:var(--slate)">${rfp.agency}</div>
+          <div style="margin-top:5px"><span style="font-size:11px;font-weight:700;color:${prioColor};background:${prioColor}22;padding:2px 8px;border-radius:4px">${sc.priority} PRIORITY</span></div>
+        </div>
+      </div>
+      <div style="margin-bottom:16px">${dimHTML}</div>
+      <div style="padding:12px;background:var(--cream);border-radius:var(--r);margin-bottom:10px;font-size:12.5px;line-height:1.6;color:var(--navy)">${sc.summary||''}</div>
+      <div style="display:flex;gap:8px;align-items:center;padding:10px 12px;background:var(--gold-bg);border:1px solid var(--gold);border-radius:var(--r)">
+        <span style="font-size:16px">💡</span>
+        <span style="font-size:12px;color:var(--gold-d);font-weight:500">${sc.recommendation||''}</span>
+      </div>`;
+  } catch(err) {
+    document.getElementById('sm-body').innerHTML = '<p style="color:var(--err);font-size:12px">Scoring error: '+err.message+'</p>';
+  }
+}
+
+// ════════════════════════════════════════
+// APPLY MODAL
+// ════════════════════════════════════════
+function openApply(id) {
+  currentRFP = appData.rfps.find(r=>r.id===id);
+  if(!currentRFP) return;
+  applyTier = 'mid'; applyGenerated = null;
+  document.getElementById('am-title').textContent = 'Apply: '+currentRFP.title;
+  document.getElementById('am-save').style.display='none';
+  const v = currentRFP.value;
+  const low=Math.round(v*.875), mid=v, high=Math.round(v*1.16);
+  const comp = currentRFP.competitor_avg||v;
+  const jurisLabel = currentRFP.state==='MD'?'Maryland DDA — COMAR 10.22':currentRFP.state==='VA'?'Virginia DBHDS — 12VAC35-105':'DC DDS — DC Code Title 7';
+  document.getElementById('am-body').innerHTML = `
+    ${currentRFP.url?`<div style="display:flex;align-items:center;gap:9px;padding:9px 12px;background:var(--info-bg);border:1px solid var(--info-b);border-radius:var(--r);margin-bottom:12px"><span style="font-size:13px">🔗</span><div style="flex:1"><div style="font-size:11px;font-weight:600;color:var(--info)">Source RFP Portal</div><div style="font-size:11px;color:var(--slate)">${jurisLabel}</div></div><a href="${currentRFP.url}" target="_blank" rel="noopener" style="padding:6px 12px;background:var(--info);color:#fff;border-radius:6px;font-size:11.5px;font-weight:600;text-decoration:none">View Original RFP →</a></div>`:''}
+    ${currentRFP.description?`<div style="padding:9px 12px;background:var(--cream);border-radius:var(--r);margin-bottom:12px;font-size:11.5px;color:var(--navy);line-height:1.6">${esc(currentRFP.description)}</div>`:''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:14px">
+      <div class="card" style="padding:10px"><div class="flbl">Agency</div><div style="font-size:12.5px;font-weight:500">${currentRFP.agency}</div></div>
+      <div class="card" style="padding:10px"><div class="flbl">Regulatory Framework</div><div style="font-size:12.5px;font-weight:500">${jurisLabel}</div></div>
+      <div class="card" style="padding:10px"><div class="flbl">Service Type</div><div style="font-size:12.5px;font-weight:500">${currentRFP.type}</div></div>
+      <div class="card" style="padding:10px"><div class="flbl">Due Date</div><div style="font-size:12.5px;font-weight:500">${currentRFP.due} <span style="color:${currentRFP.daysLeft<=14?'var(--err)':'var(--warn)'}">(${currentRFP.daysLeft}d)</span></div></div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="bs-title" style="margin-bottom:9px">Budget Strategy · Competitor avg: <strong>$${fmt$(comp)}</strong></div>
+      <div class="bcomp">
+        <div class="bc bc-l" onclick="selApplyTier(this,'low')">
+          <div class="bc-name">Undercut</div>
+          <div class="bc-val">$${fmt$(low)}</div>
+          <div class="bc-note">-12.5% · Highest win probability</div>
+          <div class="bc-comp">${low<comp?'$'+fmt$(comp-low)+' below comp':'At comp'}</div>
+        </div>
+        <div class="bc bc-m sel" onclick="selApplyTier(this,'mid')">
+          <div class="bc-name">Market</div>
+          <div class="bc-val">$${fmt$(mid)}</div>
+          <div class="bc-note">At-market · Balanced margin</div>
+          <div class="bc-comp">${mid>comp?'+$'+fmt$(mid-comp):'At comp avg'}</div>
+        </div>
+        <div class="bc bc-h" onclick="selApplyTier(this,'high')">
+          <div class="bc-name">Premium</div>
+          <div class="bc-val">$${fmt$(high)}</div>
+          <div class="bc-note">+16% · Max margin</div>
+          <div class="bc-comp">+$${fmt$(high-comp)} vs comp</div>
+        </div>
+      </div>
+    </div>
+    <div style="margin-bottom:12px">
+      <div class="bs-title" style="margin-bottom:8px">Company Docs <span style="font-size:10px;color:var(--ok)">${appData.uploaded_docs.length>0?'('+appData.uploaded_docs.length+' saved in profile)':''}</span></div>
+      ${appData.uploaded_docs.length>0?`<div style="padding:8px 10px;background:var(--ok-bg);border:1px solid var(--ok-b);border-radius:var(--r);font-size:11.5px;color:var(--ok);margin-bottom:8px">✓ Using saved: ${appData.uploaded_docs.map(d=>d.name).join(', ')}</div>`:''}
+      <div class="upload-z" style="padding:12px" onclick="document.getElementById('am-fi').click()">
+        <div class="uz-txt"><strong>Add or replace documents for this bid</strong>Certifications, financials, staff rosters</div>
+      </div>
+      <input type="file" id="am-fi" multiple style="display:none" onchange="addApplyDoc(event)">
+      <div id="am-docs"></div>
+    </div>
+    <div class="frow"><label class="flbl">Additional notes for AI (optional)</label><textarea class="fta" id="am-notes" placeholder="Specific requirements, differentiators, concerns to address..."></textarea></div>
+    <div class="gen-bar" id="am-spin" style="display:none"><div class="spinner"></div><div class="gen-txt" id="am-status">Analyzing RFP...</div></div>
+    <div id="am-out" style="display:none"></div>`;
+  openModal('apply-overlay');
+}
+
+let applyDocs = [];
+function addApplyDoc(e) {
+  Array.from(e.target.files).forEach(f=>{
+    applyDocs.push(f);
+    document.getElementById('am-docs').innerHTML += `<div class="upf"><span style="font-size:14px">📄</span><span class="upf-name">${f.name}</span></div>`;
+  });
+}
+function selApplyTier(el, tier) {
+  applyTier=tier;
+  document.querySelectorAll('.bcomp .bc').forEach(c=>c.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+async function generateApply() {
+  if(!currentRFP||isAIBusy) return;
+  isAIBusy=true;
+  const btn=document.getElementById('am-gen'); btn.disabled=true; btn.textContent='Generating...';
+  const spin=document.getElementById('am-spin'); spin.style.display='flex';
+  document.getElementById('am-out').style.display='none';
+  const statuses=['Analyzing RFP requirements...','Applying '+currentRFP.state+' regulatory framework...','Calculating '+applyTier+' budget narrative...','Drafting executive summary...','Building compliance section...','Finalizing differentiation strategy...'];
+  let si=0; const stEl=document.getElementById('am-status');
+  const iv=setInterval(()=>{if(si<statuses.length-1){si++;stEl.textContent=statuses[si];}},2000);
+  const v=currentRFP.value;
+  const bv=applyTier==='low'?Math.round(v*.875):applyTier==='mid'?v:Math.round(v*1.16);
+  const tierDesc=applyTier==='low'?'undercut-market (priced 12.5% below prevailing DMV rates to maximize win probability)':applyTier==='mid'?'market-priced (at prevailing DMV prevailing rates, balanced margin)':'premium maximum-profit (priced 16% above market, justified by superior quality narrative)';
+  const juris=currentRFP.state==='MD'?'Maryland DDA — COMAR 10.22, DDA Provider Agreement, eMedicaid billing standards':currentRFP.state==='VA'?'Virginia DBHDS — 12VAC35-105, DMAS billing, CHRIS incident reporting, HHAeXchange EVV':'DC DDS — DC Code Title 7, DHCF Medicaid, DC EVV mandate, HCBS Settings Rule';
+  const profile=appData.client_profile;
+  const docs=appData.uploaded_docs.map(d=>d.name).concat(applyDocs.map(f=>f.name));
+  const notes=document.getElementById('am-notes')?.value||'';
+  const prompt=`You are an expert HCBS procurement consultant for Pinnacle Point Staffing (DMV region healthcare staffing and HCBS consulting). Generate a complete, winning RFP response.
+
+RFP DETAILS:
+Title: ${currentRFP.title}
+Agency: ${currentRFP.agency}
+Procurement Agent: ${currentRFP.procurement_agent||currentRFP.agency}
+Regulatory Framework: ${juris}
+Service Type: ${currentRFP.type}
+Contract Value: $${bv.toLocaleString()} (${tierDesc} strategy)
+Description: ${currentRFP.description||''}
+Key Deliverables: ${currentRFP.deliverables||'Per agency requirements'}
+Key Requirements: ${currentRFP.requirements||'Per regulatory framework'}
+${notes?'Client notes: '+notes:''}
+
+COMPANY PROFILE:
+Organization: ${profile.org_name||'Pinnacle Point Staffing'}
+Services: ${profile.services||'HCBS Waiver Services, Group Home Operations, DSP Workforce, Educational Support Staffing'}
+Geography: ${profile.geography||'Maryland, Virginia, Washington DC'}
+Certifications: ${(profile.certs||[]).join(', ')||'[VERIFY: confirm current certifications]'}
+Key Differentiators: ${profile.differentiators||'Dual procurement + operations expertise, jurisdiction-specific compliance mastery'}
+Documents on file: ${docs.length>0?docs.join(', '):'None uploaded'}
+
+Generate sections:
+1. EXECUTIVE SUMMARY
+2. ORGANIZATIONAL CAPACITY AND EXPERIENCE
+3. STAFFING PLAN AND WORKFORCE MODEL
+4. BUDGET JUSTIFICATION (justify the ${applyTier} pricing with 3 specific points)
+5. COMPLIANCE AND QUALITY ASSURANCE
+6. DIFFERENTIATION FROM COMPETITORS
+7. IMPLEMENTATION TIMELINE
+
+Rules: Flag unconfirmed items [VERIFY: item]. Buyer-centric language. Participant outcomes first. Challenger Sale framing. Jurisdiction-specific references throughout.`;
+  try {
+    const res=await fetch(API + '/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:2000,messages:[{role:'user',content:prompt}]})});
+    const data=await res.json();
+    clearInterval(iv); spin.style.display='none';
+    const text=data.content?.find(b=>b.type==='text')?.text||'Error generating response. Check your API key and try again.';
+    applyGenerated={rfp_title:currentRFP.title,rfp_id:currentRFP.id,content:text,budget_tier:applyTier,budget_value:bv,state:currentRFP.state};
+    try{await fetch(API+'/responses',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(applyGenerated)});}catch(e){}
+    const out=document.getElementById('am-out');
+    out.innerHTML=`<div class="resp-prev"><h4>Generated Response — Review before submission</h4><div>${fmtPreview(text)}</div></div>`;
+    out.style.display='block';
+    document.getElementById('am-save').style.display='inline-flex';
+    showToast('Response generated — review all [VERIFY] flags');
+  } catch(err) { clearInterval(iv); spin.style.display='none'; showToast('AI error: '+err.message); }
+  isAIBusy=false; btn.disabled=false; btn.textContent='⚡ Generate Response';
+}
+
+function saveApplyToTracker() {
+  if(!currentRFP) return;
+  const existing=appData.bids.find(b=>b.title===currentRFP.title);
+  if(!existing) {
+    const nb={id:'b'+Date.now(),title:currentRFP.title,state:currentRFP.state,value:currentRFP.value,status:'prep',agency:currentRFP.agency,due:currentRFP.due,budget:applyTier,notes:[],created:new Date().toISOString()};
+    appData.bids.push(nb);
+    try{fetch(API+'/bids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(nb)});}catch(e){}
+  }
+  closeModal('apply-overlay');
+  showToast('Saved to Bid Tracker → Prep In Progress');
+  goTab('tracker',null);
+}
+
+function saveBid(id) {
+  const rfp=appData.rfps.find(r=>r.id===id); if(!rfp) return;
+  const exists=appData.bids.find(b=>b.title===rfp.title);
+  if(!exists){
+    const nb={id:'b'+Date.now(),title:rfp.title,state:rfp.state,value:rfp.value,status:'new',agency:rfp.agency,due:rfp.due,budget:'mid',notes:[],created:new Date().toISOString()};
+    appData.bids.push(nb);
+    try{fetch(API+'/bids',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(nb)});}catch(e){}
+  }
+  showToast('Saved to Bid Tracker');
+}
+
+// ════════════════════════════════════════
+// BUILDER CHAT
+// ════════════════════════════════════════
+function addBotMsg(html) {
+  const c=document.getElementById('bchat');
+  const d=document.createElement('div'); d.className='mr';
+  d.innerHTML=`<div class="av bot">PP</div><div class="bbl bot">${html}</div>`;
+  c.appendChild(d); c.scrollTop=c.scrollHeight; return d;
+}
+function addUserMsg(text) {
+  const c=document.getElementById('bchat');
+  const d=document.createElement('div'); d.className='mr u';
+  d.innerHTML=`<div class="av user">YOU</div><div class="bbl user">${esc(text).replace(/\\n/g,'<br>')}</div>`;
+  c.appendChild(d); c.scrollTop=c.scrollHeight;
+}
+function bkey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendChat();}if(e.ctrlKey&&e.key==='Enter')sendChat();}
+function arta(el){el.style.height='38px';el.style.height=Math.min(el.scrollHeight,110)+'px';}
+function clearChat(){document.getElementById('bchat').innerHTML='';chatHistory=[];addBotMsg('Chat cleared. Ready for a new session.');}
+
+async function sendChat() {
+  const ta=document.getElementById('bta');
+  const text=ta.value.trim(); if(!text||isAIBusy) return;
+  ta.value=''; ta.style.height='38px';
+  addUserMsg(text); chatHistory.push({role:'user',content:text});
+  const ld=addBotMsg('<div class="tdots"><div class="td"></div><div class="td"></div><div class="td"></div></div>');
+  document.getElementById('bsend').disabled=true; isAIBusy=true;
+  const chips=Array.from(document.querySelectorAll('#bctx .chip.on')).map(c=>c.textContent);
+  const profile=appData.client_profile;
+  const docs=appData.uploaded_docs;
+  const sys=`You are an expert healthcare procurement consultant for Pinnacle Point Staffing in the DMV region.
+
+Mode: ${aiMode.toUpperCase()}
+Context: ${chips.join(', ')||'General DMV'}
+Budget tier: ${budgetTier} (${budgetTier==='low'?'-12.5%':budgetTier==='mid'?'at-market':'+16%'})
+RFP: ${document.getElementById('b-title').value||'Not specified'}
+Agency: ${document.getElementById('b-agency').value||'Not specified'}
+Jurisdiction: ${document.getElementById('b-juris').value}
+Contract value: ${document.getElementById('b-val').value?'$'+parseInt(document.getElementById('b-val').value).toLocaleString():'Not specified'}
+Company: ${profile.org_name||'Pinnacle Point Staffing'}
+Services: ${profile.services||'HCBS, Group Home, DSP Staffing, Educational Support'}
+Certifications: ${(profile.certs||[]).join(', ')||'Confirm with leadership'}
+Saved documents: ${docs.length>0?docs.map(d=>d.name).join(', '):'None'}
+
+Rules: Accuracy first. Flag [VERIFY: item] for unconfirmed claims. Buyer-centric language. Participant outcomes first. Structure with labeled section headers. Challenger Sale methodology where appropriate. Never conflate MD/VA/DC regulatory frameworks.`;
+  try {
+    const msgs=[...chatHistory];
+    const res=await fetch(API + '/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:2000,system:sys,messages:msgs})});
+    const data=await res.json();
+    const reply=data.content?.find(b=>b.type==='text')?.text||(data.error?'API Error: '+(data.error.message||data.error):'No response received. Please check your API key in settings.');
+    chatHistory.push({role:'assistant',content:reply});
+    ld.querySelector('.bbl').innerHTML=fmtChat(reply);
+  } catch(err) { ld.querySelector('.bbl').innerHTML='<span style="color:var(--err)">Error: '+err.message+'</span>'; }
+  document.getElementById('bsend').disabled=false; isAIBusy=false;
+  document.getElementById('bchat').scrollTop=9999;
+}
+
+async function generateFull() {
+  const title=document.getElementById('b-title').value;
+  if(!title){showToast('Enter an RFP title first');return;}
+  document.getElementById('bta').value=`Generate a complete ${aiMode.toUpperCase()} response for: ${title}. Use the ${budgetTier} budget tier and all saved company profile information.`;
+  sendChat();
+}
+
+async function runQA() {
+  if(chatHistory.length===0){showToast('Generate a response first, then run QA');return;}
+  const lastResponse=chatHistory.filter(m=>m.role==='assistant').pop();
+  if(!lastResponse){showToast('No response to check');return;}
+  addUserMsg('Run a pre-submission QA check on the last response I generated.');
+  chatHistory.push({role:'user',content:'Run a pre-submission QA check on the last response generated.'});
+  const ld=addBotMsg('<div class="tdots"><div class="td"></div><div class="td"></div><div class="td"></div></div>');
+  isAIBusy=true; document.getElementById('bsend').disabled=true;
+  const juris=document.getElementById('b-juris').value;
+  const prompt=`You are a pre-submission QA reviewer for an HCBS/Group Home RFP response. Review this response and provide a structured QA report.
+
+Jurisdiction: ${juris==='MD'?'Maryland DDA (COMAR 10.22)':juris==='VA'?'Virginia DBHDS (12VAC35-105)':'DC DDS (DC Code Title 7)'}
+
+Response to review:
+${lastResponse.content}
+
+Provide QA results in this format — check each item and mark PASS, FAIL, or WARN:
+
+QA RESULTS:
+
+✅ PASS: [item] — [brief note]
+or
+❌ FAIL: [item] — [what's missing]
+or  
+⚠️ WARN: [item] — [needs attention]
+
+Check for:
+1. Executive summary addresses participant outcomes (not just org features)
+2. All VERIFY flags are clearly marked
+3. Staffing ratios are specified
+4. Budget justification has 3+ specific points
+5. Jurisdiction-specific regulatory references present
+6. No fabricated certifications or capabilities
+7. Compliance section addresses EVV requirements
+8. Implementation timeline is realistic
+9. Differentiation section uses Challenger Sale framing
+10. No requirements appear to be omitted
+
+End with: OVERALL VERDICT: READY TO SUBMIT / NEEDS REVISION / DO NOT SUBMIT`;
+  try {
+    const res=await fetch(API + '/ai',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({model:'claude-sonnet-4-5',max_tokens:800,messages:[{role:'user',content:prompt}]})});
+    const data=await res.json();
+    const reply=data.content?.find(b=>b.type==='text')?.text||'QA error.';
+    chatHistory.push({role:'assistant',content:reply});
+    ld.querySelector('.bbl').innerHTML=fmtQA(reply);
+  } catch(err) { ld.querySelector('.bbl').innerHTML='<span style="color:var(--err)">QA error: '+err.message+'</span>'; }
+  isAIBusy=false; document.getElementById('bsend').disabled=false;
+  document.getElementById('bchat').scrollTop=9999;
+}
+
+// ════════════════════════════════════════
+// DOCUMENT MEMORY
+// ════════════════════════════════════════
+function renderDocList() {
+  const list=document.getElementById('file-list'); if(!list) return;
+  list.innerHTML=appData.uploaded_docs.map(d=>`<div class="upf"><span style="font-size:14px">📄</span><span class="upf-name">${d.name}</span><span class="upf-rm" onclick="removeDoc('${d.id}')">✕</span></div>`).join('');
+  const badge=document.getElementById('doc-persist-badge');
+  if(badge) badge.textContent=appData.uploaded_docs.length>0?'('+appData.uploaded_docs.length+' saved)':'';
+}
+function dropFile(e){e.preventDefault();document.getElementById('uz').classList.remove('drag');uploadFiles(e.dataTransfer.files);}
+function dov(e){e.preventDefault();document.getElementById('uz').classList.add('drag');}
+function dlv(e){document.getElementById('uz').classList.remove('drag');}
+function pickFile(e){uploadFiles(e.target.files);}
+async function uploadFiles(files) {
+  for(const f of Array.from(files)){
+    const doc={name:f.name,size:f.size,type:f.type};
+    appData.uploaded_docs.push({...doc,id:'d'+Date.now(),uploaded_at:new Date().toISOString()});
+    try{await fetch(API+'/docs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(doc)});}catch(e){}
+  }
+  renderDocList(); showToast(files.length+' doc(s) saved to profile memory');
+}
+async function removeDoc(id) {
+  appData.uploaded_docs=appData.uploaded_docs.filter(d=>d.id!==id);
+  try{await fetch(API+'/docs/'+id,{method:'DELETE'});}catch(e){}
+  renderDocList();
+}
+function selTier(el,t){budgetTier=t;document.querySelectorAll('.tier-cards .tc').forEach(c=>c.classList.remove('sel'));el.classList.add('sel');}
+
+// ════════════════════════════════════════
+// BID TRACKER
+// ════════════════════════════════════════
+function renderTracker() {
+  const bids=appData.bids;
+  const won=bids.filter(b=>b.status==='won');
+  const active=bids.filter(b=>['new','prep','submitted'].includes(b.status));
+  const tv=active.reduce((s,b)=>s+b.value,0);
+  const wv=won.reduce((s,b)=>s+b.value,0);
+  const wr=bids.length>0?Math.round(won.length/bids.length*100):0;
+  document.getElementById('tstats').innerHTML=`
+    <div class="sc"><div class="sc-lbl">Active Bids</div><div class="sc-val">${active.length}</div><div class="sc-sub">In pipeline</div></div>
+    <div class="sc"><div class="sc-lbl">Pipeline Value</div><div class="sc-val" style="color:var(--gold-d)">$${fmt$(tv)}</div><div class="sc-sub">Potential contracts</div></div>
+    <div class="sc"><div class="sc-lbl">Contracts Won</div><div class="sc-val" style="color:var(--ok)">$${fmt$(wv)}</div><div class="sc-sub">${won.length} award${won.length!==1?'s':''}</div></div>
+    <div class="sc"><div class="sc-lbl">Win Rate</div><div class="sc-val">${wr}%</div><div class="sc-sub">Historical</div></div>`;
+  const cols=[
+    {key:'new',label:'New / Identified',cls:'kh-new'},
+    {key:'prep',label:'Prep In Progress',cls:'kh-prep'},
+    {key:'submitted',label:'Submitted',cls:'kh-sub'},
+    {key:'won',label:'Won',cls:'kh-won'},
+    {key:'lost',label:'Lost / No Bid',cls:'kh-lost'},
+  ];
+  const board=document.getElementById('kanban');
+  board.innerHTML=cols.map(col=>{
+    const cb=bids.filter(b=>b.status===col.key);
+    const cv=cb.reduce((s,b)=>s+b.value,0);
+    return `<div class="kc">
+      <div class="kh ${col.cls}"><div class="kt">${col.label}</div><div class="kc-count">${cb.length} · $${fmt$(cv)}</div></div>
+      <div class="kcards">${cb.map(b=>`
+        <div class="kcard" onclick="openBid('${b.id}')">
+          <div class="kcard-title">${b.title}</div>
+          <div class="kcard-meta"><span class="sb sb-${b.state.toLowerCase()}">${b.state}</span><span style="font-size:10px;color:var(--slate)">${b.due}</span></div>
+          <div class="kcard-val">$${fmt$(b.value)} · ${b.budget==='low'?'Undercut':b.budget==='mid'?'Market':'Premium'}</div>
+          ${(b.notes||[]).length>0?`<div class="kcard-notes">💬 ${b.notes.length} note${b.notes.length!==1?'s':''}</div>`:''}
+          ${b.debrief?'<div style="font-size:9.5px;color:var(--gold-d);margin-top:3px">📋 Debrief on file</div>':''}
+        </div>`).join('')}
+        ${cb.length===0?'<div class="kempty">No bids</div>':''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openBid(id) {
+  const b=appData.bids.find(x=>x.id===id); if(!b) return;
+  document.getElementById('bm-title').textContent=b.title;
+  const needsDebrief=(b.status==='won'||b.status==='lost')&&!b.debrief;
+  document.getElementById('bm-body').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:16px">
+      <div class="card" style="padding:10px"><div class="flbl">Status</div><div style="font-size:12.5px;font-weight:500;text-transform:capitalize">${b.status}</div></div>
+      <div class="card" style="padding:10px"><div class="flbl">Value</div><div style="font-size:12.5px;font-weight:500;color:var(--ok)">$${fmt$(b.value)}</div></div>
+      <div class="card" style="padding:10px"><div class="flbl">Agency</div><div style="font-size:12.5px">${b.agency}</div></div>
+      <div class="card" style="padding:10px"><div class="flbl">Budget Tier</div><div style="font-size:12.5px;font-weight:500">${b.budget==='low'?'Undercut Market':b.budget==='mid'?'Market-Priced':'Maximum Profit'}</div></div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="bs-title" style="margin-bottom:8px">Update Status</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap">
+        ${['new','prep','submitted','won','lost'].map(s=>`<button class="btn ${b.status===s?'btn-navy':'btn-g'}" style="font-size:11px;padding:5px 12px" onclick="updateBidStatus('${b.id}','${s}')">${s.charAt(0).toUpperCase()+s.slice(1)}</button>`).join('')}
+      </div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div class="bs-title" style="margin-bottom:8px">Collaboration Notes</div>
+      <div id="bm-notes">${(b.notes||[]).map(n=>`<div class="note-bubble">${esc(n.text)}<div class="note-ts">${n.ts} · ${n.author}</div></div>`).join('')}</div>
+      <div style="display:flex;gap:7px;margin-top:8px">
+        <input class="fi" id="bm-note-in" placeholder="Add a note..." style="flex:1">
+        <button class="btn btn-p" onclick="addNote('${b.id}')" style="padding:7px 12px;font-size:12px">Add</button>
+      </div>
+    </div>
+    ${b.debrief?`<div style="margin-bottom:14px">
+      <div class="bs-title" style="margin-bottom:8px">Win/Loss Debrief</div>
+      <div class="card" style="background:var(--ok-bg);border-color:var(--ok-b)">
+        <div class="frow"><div class="flbl">Deciding Factor</div><div style="font-size:12px">${esc(b.debrief.factor)}</div></div>
+        <div class="frow" style="margin-top:8px"><div class="flbl">Pricing Reflection</div><div style="font-size:12px">${esc(b.debrief.pricing)}</div></div>
+        <div class="frow" style="margin-top:8px"><div class="flbl">Compliance Gap</div><div style="font-size:12px">${esc(b.debrief.gap)}</div></div>
+      </div></div>`:''}
+    ${needsDebrief?`<div class="debrief-form">
+      <h4>📋 Win/Loss Debrief — Complete to improve future bids</h4>
+      <div class="frow"><label class="flbl">What was the deciding factor?</label><input class="fi" id="db-factor" placeholder="e.g. Price competitiveness, compliance narrative strength..."></div>
+      <div class="frow"><label class="flbl">How would you price it differently?</label><input class="fi" id="db-price" placeholder="e.g. Would use market tier instead of undercut..."></div>
+      <div class="frow"><label class="flbl">Any compliance gap flagged?</label><input class="fi" id="db-gap" placeholder="e.g. EVV section incomplete, missing certifications..."></div>
+      <button class="btn btn-p" style="margin-top:6px" onclick="saveDebrief('${b.id}')">Save Debrief</button>
+    </div>`:''}`;
+  document.getElementById('bm-footer').innerHTML=`
+    <button class="btn btn-g" onclick="closeModal('bid-overlay')">Close</button>
+    <button class="btn btn-p" onclick="closeModal('bid-overlay');goTab('builder',null)" style="font-size:12px">Open in Builder →</button>`;
+  openModal('bid-overlay');
+}
+
+async function updateBidStatus(id, status) {
+  const b=appData.bids.find(x=>x.id===id); if(!b) return;
+  b.status=status;
+  try{await fetch(API+'/bids/'+id,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({status})});}catch(e){}
+  closeModal('bid-overlay'); renderTracker(); showToast('Status updated → '+status);
+  if(status==='won'||status==='lost') setTimeout(()=>openBid(id),300);
+}
+
+async function addNote(id) {
+  const text=document.getElementById('bm-note-in').value.trim(); if(!text) return;
+  const note={text,ts:new Date().toLocaleString('en-US',{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'}),author:'Team'};
+  const b=appData.bids.find(x=>x.id===id); if(b){b.notes=b.notes||[];b.notes.push(note);}
+  try{await fetch(API+'/bids/'+id+'/note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(note)});}catch(e){}
+  document.getElementById('bm-note-in').value='';
+  document.getElementById('bm-notes').innerHTML+= `<div class="note-bubble">${esc(text)}<div class="note-ts">${note.ts} · Team</div></div>`;
+  renderTracker(); showToast('Note saved');
+}
+
+async function saveDebrief(id) {
+  const factor=document.getElementById('db-factor').value;
+  const pricing=document.getElementById('db-price').value;
+  const gap=document.getElementById('db-gap').value;
+  if(!factor){showToast('Enter the deciding factor first');return;}
+  const debrief={factor,pricing,gap};
+  const b=appData.bids.find(x=>x.id===id); if(b) b.debrief=debrief;
+  try{await fetch(API+'/bids/'+id+'/debrief',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(debrief)});}catch(e){}
+  closeModal('bid-overlay'); renderTracker(); showToast('Debrief saved — improving future bids');
+}
+
+// ════════════════════════════════════════
+// COMPLIANCE CHECKLIST
+// ════════════════════════════════════════
+const CL = {
+  md:{label:"Maryland DDA",categories:[
+    {id:"md-lic",name:"Licensure & Enrollment",items:[
+      {id:"md1",title:"DDA Provider Application",desc:"Submit completed DDA Provider Application including organizational documents, board roster, and fiscal agent information.",tag:"req"},
+      {id:"md2",title:"Article of Incorporation / Certificate of Good Standing",desc:"Current certificate from Maryland SDAT within 6 months of application.",tag:"req"},
+      {id:"md3",title:"IRS Tax Status Documentation",desc:"501(c)(3) determination letter or for-profit business registration confirming federal tax status.",tag:"req"},
+      {id:"md4",title:"DDA Provider Agreement Signature",desc:"Execute current DDA/LTSS Provider Agreement before any service delivery begins.",tag:"req"},
+      {id:"md5",title:"Medicaid Provider Enrollment — MMIS",desc:"Enroll as Medicaid provider through Maryland MMIS portal with active NPI number.",tag:"req"},
+    ]},
+    {id:"md-staff",name:"Staffing & Credentials",items:[
+      {id:"md6",title:"DSP Orientation & Training — DDA Core",desc:"All DSPs complete DDA-required orientation within 30 days including abuse/neglect, rights, and safety modules.",tag:"req"},
+      {id:"md7",title:"Background Check — Maryland CJIS",desc:"Criminal Justice Information System screening for all staff prior to any participant contact.",tag:"req"},
+      {id:"md8",title:"OIG Exclusion Check",desc:"Monthly screening of all staff against OIG LEIE. Maintain documentation of each monthly check.",tag:"req"},
+      {id:"md9",title:"First Aid / CPR Certification",desc:"Minimum one staff per shift holds current First Aid and CPR certification at all times.",tag:"req"},
+      {id:"md10",title:"Person-Centered Thinking Training",desc:"At least one management staff certified in PCT per DDA expectation.",tag:"rec"},
+    ]},
+    {id:"md-doc",name:"Documentation & ISP",items:[
+      {id:"md11",title:"ISP Participation",desc:"Provider participates in ISP meetings, contributes to plan development, implements supports within ISP timelines.",tag:"req"},
+      {id:"md12",title:"EVV — Electronic Visit Verification",desc:"Maryland Medicaid EVV mandate active. Must use approved EVV vendor (Sandata or state system) for all HCBS visits.",tag:"req"},
+      {id:"md13",title:"Incident Reporting — deitrack/eISP",desc:"Critical incidents reported in DDA's eISP/deitrack system within 24 hours. Near-misses within 72 hours.",tag:"req"},
+      {id:"md14",title:"Progress Notes — Medicaid Standard",desc:"Service documentation per visit: duration, activities, participant response, and staff signature.",tag:"req"},
+    ]},
+    {id:"md-fac",name:"Facility & Safety (Group Home)",items:[
+      {id:"md15",title:"OHCQ Group Home License",desc:"Office of Health Care Quality license for residential facility. Annual renewal required.",tag:"req"},
+      {id:"md16",title:"Fire Inspection Certificate",desc:"Annual fire marshal inspection. Certificate current at time of DDA review.",tag:"req"},
+      {id:"md17",title:"Emergency Preparedness Plan",desc:"Written emergency plan reviewed annually covering evacuation, natural disaster, utility failure, and medical emergency.",tag:"req"},
+      {id:"md18",title:"Medication Administration Policy",desc:"Written MAP aligned with Maryland COMAR 10.22.07. Staff trained in MAP prior to administration.",tag:"req"},
+    ]},
+    {id:"md-bill",name:"Billing & Revenue Cycle",items:[
+      {id:"md19",title:"Medicaid Claim Submission — eMedicaid",desc:"Registered and credentialed to submit claims via Maryland's eMedicaid provider portal.",tag:"req"},
+      {id:"md20",title:"Procedure Code & Modifier Accuracy",desc:"Billing staff trained on DDA waiver service procedure codes, modifiers, and place of service requirements.",tag:"req"},
+      {id:"md21",title:"MCO Credentialing — HealthChoice",desc:"If serving MCO-enrolled individuals, complete credentialing with HealthChoice MCOs in service area.",tag:"rec"},
+    ]},
+  ]},
+  va:{label:"Virginia DBHDS",categories:[
+    {id:"va-lic",name:"License & Registration",items:[
+      {id:"va1",title:"DBHDS Provider License",desc:"Application to Virginia DBHDS for license to operate. Separate license per service type (residential, day support, etc.).",tag:"req"},
+      {id:"va2",title:"DMAS Provider Enrollment",desc:"Complete DMAS Medicaid enrollment for applicable waiver services: CCC Plus, DD Waiver, or EDCD Waiver.",tag:"req"},
+      {id:"va3",title:"Certificate of Good Standing — Virginia SCC",desc:"Current Certificate of Good Standing from Virginia State Corporation Commission.",tag:"req"},
+      {id:"va4",title:"Ownership Disclosure Form",desc:"DBHDS requires disclosure of all owners, directors, and officers with 5%+ ownership interest.",tag:"req"},
+    ]},
+    {id:"va-staff",name:"Workforce Compliance",items:[
+      {id:"va5",title:"DSP Background Check — Virginia State Police",desc:"Criminal Background check through Virginia State Police required for all direct care staff before hire.",tag:"req"},
+      {id:"va6",title:"Sex Offender Registry Check",desc:"Search Virginia and national sex offender registries for all staff with participant contact.",tag:"req"},
+      {id:"va7",title:"TB Screening",desc:"All direct care staff must have documented TB screening within 12 months.",tag:"req"},
+      {id:"va8",title:"VMAP — Medication Administration",desc:"Staff administering medications must complete Virginia MAP training and maintain current certification.",tag:"req"},
+      {id:"va9",title:"DBHDS Core Competency Training",desc:"All staff complete DBHDS training including emergency safety, rights, and person-centered practices within 60 days.",tag:"req"},
+    ]},
+    {id:"va-prog",name:"Program & ISP Standards",items:[
+      {id:"va10",title:"ISP Implementation — DBHDS Format",desc:"Residential providers implement ISP goals and document progress per DBHDS frequency requirements.",tag:"req"},
+      {id:"va11",title:"Positive Supports — Zero Tolerance Policy",desc:"Written policy prohibiting prohibited interventions. Behavior support plans reviewed by LBHP or BCBA.",tag:"req"},
+      {id:"va12",title:"CHRIS Incident Reporting",desc:"Report Level I and Level II incidents in CHRIS system per DBHDS timelines.",tag:"req"},
+      {id:"va13",title:"QA Review Readiness",desc:"Internal QA program documented and active. Compliance tracking system demonstrated.",tag:"rec"},
+    ]},
+    {id:"va-evv",name:"EVV & Billing",items:[
+      {id:"va14",title:"EVV Compliance — HHAeXchange",desc:"Virginia Medicaid EVV mandate active for personal care and home health. Use DMAS-approved vendor.",tag:"req"},
+      {id:"va15",title:"Service Authorization — DMAS ARTS",desc:"All waiver services require prior authorization before billing. Authorization tracked in DMAS system.",tag:"req"},
+      {id:"va16",title:"DMAS Claim Submission",desc:"Claims submitted through Virginia Medicaid portal or approved clearinghouse. 12-month timely filing limit.",tag:"req"},
+    ]},
+    {id:"va-fac",name:"Residential Facility (Group Home)",items:[
+      {id:"va17",title:"DBHDS Residential Facility License",desc:"Annual licensure for each Group Home facility address. Survey conducted prior to licensure.",tag:"req"},
+      {id:"va18",title:"Fire Marshal Inspection",desc:"Annual fire safety inspection with current certificate maintained on-site.",tag:"req"},
+      {id:"va19",title:"Safe Therapeutic Environment Policy",desc:"Physical plant standards meeting DBHDS STE requirements. No locked doors, accessible bathrooms.",tag:"req"},
+      {id:"va20",title:"Emergency Preparedness — DBHDS Format",desc:"Plan reviewed with residents annually. Covers evacuation routes, utility failure, emergency contacts.",tag:"req"},
+    ]},
+  ]},
+  dc:{label:"Washington DC DDS",categories:[
+    {id:"dc-enr",name:"Enrollment & Certification",items:[
+      {id:"dc1",title:"DC DDS Provider Application",desc:"Submit provider application including organizational profile, fiscal documentation, and service descriptions.",tag:"req"},
+      {id:"dc2",title:"DC Medicaid Enrollment — DHCF",desc:"Enroll with DC Department of Health Care Finance to bill Medicaid waiver services. Requires NPI and W-9.",tag:"req"},
+      {id:"dc3",title:"DC Basic Business License",desc:"Active DC Basic Business License from DC DLCP.",tag:"req"},
+      {id:"dc4",title:"HCBS Settings Rule Attestation",desc:"Written attestation that all settings comply with CMS HCBS Settings Rule (community, integrated, choice).",tag:"req"},
+    ]},
+    {id:"dc-staff",name:"Staff Requirements",items:[
+      {id:"dc5",title:"DC Criminal Background Check",desc:"All staff must clear DC MPD background check and national fingerprint check before participant contact.",tag:"req"},
+      {id:"dc6",title:"Vulnerable Adult Protection Training",desc:"Mandatory training on abuse/neglect recognition and reporting under DC law for all direct care staff.",tag:"req"},
+      {id:"dc7",title:"First Aid / CPR — All Direct Care Staff",desc:"DC DDS requires all direct care staff hold current First Aid and CPR certification.",tag:"req"},
+      {id:"dc8",title:"DSP Core Competency Training",desc:"DC DDS-aligned DSP core competency training within 90 days of hire.",tag:"req"},
+    ]},
+    {id:"dc-isp",name:"ISP & Service Delivery",items:[
+      {id:"dc9",title:"ISP Coordination with DDS Support Coordinator",desc:"Coordinate with assigned DDS Support Coordinator for all waiver participants. Attend annual ISP meetings.",tag:"req"},
+      {id:"dc10",title:"Person-Centered Practices — DC Standard",desc:"Service delivery documented as person-centered with evidence of participant choice, control, and goal-setting.",tag:"req"},
+      {id:"dc11",title:"Critical Incident Reporting — DC DDS Portal",desc:"Incidents reported within 24 hours (critical) or 72 hours (serious) through DC DDS incident reporting system.",tag:"req"},
+      {id:"dc12",title:"Progress Documentation — DC DDS Format",desc:"Progress notes per DC DDS requirements: service type, duration, measurable outcomes, staff credentials.",tag:"req"},
+    ]},
+    {id:"dc-evv",name:"EVV & Revenue",items:[
+      {id:"dc13",title:"EVV Compliance — DC Medicaid Mandate",desc:"DC EVV requirement active for personal assistance, supported living, home health. Use approved EVV system.",tag:"req"},
+      {id:"dc14",title:"DHCF Claim Submission",desc:"Claims submitted through DC MMIS. Requires active provider credentialing.",tag:"req"},
+      {id:"dc15",title:"DD Waiver Prior Authorization",desc:"All DD Waiver services require prior authorization from DC DDS before service begins.",tag:"req"},
+    ]},
+    {id:"dc-res",name:"Residential (Group Home)",items:[
+      {id:"dc16",title:"Group Home License — HPLA",desc:"DC HPLA license for residential facility. Annual renewal required.",tag:"req"},
+      {id:"dc17",title:"DCRA Certificate of Occupancy",desc:"Current DC DCRA Certificate of Occupancy for facility address.",tag:"req"},
+      {id:"dc18",title:"DC Fire & EMS Safety Inspection",desc:"Annual fire safety inspection certificate. Smoke detectors, sprinklers, exits per DC Fire Code.",tag:"req"},
+      {id:"dc19",title:"Resident Rights Policy — DC DDS Standard",desc:"Written Resident Rights policy posted in accessible formats. Grievance procedure documented.",tag:"req"},
+      {id:"dc20",title:"HCBS Settings Compliance",desc:"All settings meet CMS HCBS Final Rule: community integration, rights, and participant choice.",tag:"req"},
+    ]},
+  ]},
+};
+
+function renderCompliance() {
+  ['md','va','dc'].forEach(state=>{
+    const nav=document.getElementById('clnav-'+state);
+    const items=document.getElementById('clitems-'+state);
+    if(!nav||!items) return;
+    const data=CL[state];
+    nav.innerHTML=data.categories.map((cat,i)=>{
+      const total=cat.items.length;
+      const done=cat.items.filter(it=>appData.checklist_state[it.id]).length;
+      const isAct=(activeCLCats[state]===cat.id)||(i===0&&!activeCLCats[state]);
+      return `<button class="cl-cat ${isAct?'active':''}" onclick="switchCLCat('${state}','${cat.id}')">${cat.name}<span class="cl-mini">${done}/${total}</span></button>`;
+    }).join('');
+    const activeCat=data.categories.find(c=>c.id===activeCLCats[state])||data.categories[0];
+    renderCatItems(state,activeCat,items);
+  });
+}
+
+function switchCLCat(state,catId){activeCLCats[state]=catId;renderCompliance();}
+
+function renderCatItems(state,cat,el){
+  if(!el||!cat) return;
+  const total=cat.items.length;
+  const done=cat.items.filter(i=>appData.checklist_state[i.id]).length;
+  const pct=total>0?Math.round(done/total*100):0;
+  el.innerHTML=`
+    <div class="pb-wrap"><div class="pb" style="width:${pct}%"></div></div>
+    <div class="pb-txt">${done} of ${total} complete (${pct}%)</div>
+    <div style="font-size:11px;font-weight:600;color:var(--navy);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid var(--cream-d)">${cat.name}</div>
+    ${cat.items.map(item=>{
+      const isDone=appData.checklist_state[item.id];
+      return `<div class="ci ${isDone?'done':''}">
+        <div class="ci-cb ${isDone?'ch':''}" onclick="toggleCL('${item.id}','${state}')"></div>
+        <div class="ci-body">
+          <div class="ci-title">${item.title}</div>
+          <div class="ci-desc">${item.desc}</div>
+          <span class="tag tag-${item.tag==='req'?'req':item.tag==='rec'?'rec':'ong'}">${item.tag==='req'?'Required':item.tag==='rec'?'Recommended':'Ongoing'}</span>
+        </div>
+      </div>`;
+    }).join('')}`;
+}
+
+async function toggleCL(itemId,state){
+  appData.checklist_state[itemId]=!appData.checklist_state[itemId];
+  renderCompliance();
+  try{await fetch(API+'/checklist',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(appData.checklist_state)});}catch(e){}
+}
+
+function switchCL(state,btn){
+  document.querySelectorAll('.clt').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.clc').forEach(c=>c.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('clc-'+state).classList.add('active');
+  activeCLState=state; renderCompliance();
+}
+
+function exportCL(){showToast('Checklist exported for '+CL[activeCLState].label);}
+
+// ════════════════════════════════════════
+// COMPETITOR / MARKET INTEL
+// ════════════════════════════════════════
+function renderCompetitor(state) {
+  const d=appData.competitor_data?.[state]||appData.competitor_data?.MD||{avg_rate_dsp:22,avg_markup:1.28,top_competitors:[],recent_awards:[]};
+  const label=state==='MD'?'Maryland DDA':state==='VA'?'Virginia DBHDS':'Washington DC DDS';
+  const avgContract=Math.round(d.avg_rate_dsp*2080*d.avg_markup);
+  document.getElementById('comp-content').innerHTML=`
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:20px">
+      <div class="sc"><div class="sc-lbl">Avg DSP Hourly Rate</div><div class="sc-val">$${d.avg_rate_dsp.toFixed(2)}</div><div class="sc-sub">${label} prevailing</div></div>
+      <div class="sc"><div class="sc-lbl">Avg Markup Factor</div><div class="sc-val">${d.avg_markup}x</div><div class="sc-sub">Rate to billing</div></div>
+      <div class="sc"><div class="sc-lbl">Est. Annual Contract</div><div class="sc-val" style="color:var(--gold-d)">$${fmt$(avgContract)}</div><div class="sc-sub">Per FTE DSP</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px">
+      <div class="card">
+        <div style="font-size:11px;font-weight:600;color:var(--slate);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">Top Competitors — ${label}</div>
+        ${(d.top_competitors||[]).map((c,i)=>`<div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--cream-d)"><div style="width:20px;height:20px;border-radius:50%;background:var(--navy);color:var(--gold);font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0">${i+1}</div><div style="font-size:12.5px;color:var(--navy)">${c}</div></div>`).join('')}
+        <div style="margin-top:12px;padding:10px;background:var(--gold-bg);border:1px solid var(--gold);border-radius:var(--r);font-size:11.5px;color:var(--gold-d)">💡 <strong>Pinnacle Point differentiator:</strong> Dual procurement + operations expertise. Competitors offer one or the other — not both.</div>
+      </div>
+      <div class="card">
+        <div style="font-size:11px;font-weight:600;color:var(--slate);letter-spacing:.5px;text-transform:uppercase;margin-bottom:10px">Budget Tier Decision Guide</div>
+        <div style="font-size:12px;margin-bottom:8px;color:var(--slate)">Based on ${label} awarded contract data:</div>
+        <div style="display:flex;flex-direction:column;gap:7px">
+          <div style="padding:9px;background:var(--ok-bg);border:1px solid var(--ok-b);border-radius:var(--r)"><div style="font-size:11px;font-weight:600;color:var(--ok);margin-bottom:3px">🟢 Undercut: $${fmt$(Math.round(d.avg_rate_dsp*2080*d.avg_markup*.875))}/FTE</div><div style="font-size:10.5px;color:var(--ok)">Use when: new market entry, high competition, volume contract</div></div>
+          <div style="padding:9px;background:var(--gold-bg);border:1px solid var(--gold);border-radius:var(--r)"><div style="font-size:11px;font-weight:600;color:var(--gold-d);margin-bottom:3px">🟡 Market: $${fmt$(avgContract)}/FTE</div><div style="font-size:10.5px;color:var(--gold-d)">Use when: strong incumbent, quality narrative ready, balanced bid</div></div>
+          <div style="padding:9px;background:var(--info-bg);border:1px solid var(--info-b);border-radius:var(--r)"><div style="font-size:11px;font-weight:600;color:var(--info);margin-bottom:3px">🔵 Premium: $${fmt$(Math.round(avgContract*1.16))}/FTE</div><div style="font-size:10.5px;color:var(--info)">Use when: sole-source, specialist certifications, multi-year relationship</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div style="font-size:11px;font-weight:600;color:var(--slate);letter-spacing:.5px;text-transform:uppercase;margin-bottom:12px">Recent Awarded Contracts — ${label}</div>
+      <table class="comp-table">
+        <thead><tr><th>Contract</th><th>Awarded To</th><th>Value</th><th>Tier</th><th>vs. Pinnacle Strategy</th></tr></thead>
+        <tbody>${(d.recent_awards||[]).map(a=>`<tr>
+          <td style="font-weight:500">${a.title}</td>
+          <td>${a.winner}</td>
+          <td style="font-weight:600;color:var(--ok)">$${fmt$(a.value)}</td>
+          <td><span class="award-tier at-${a.tier==='high'?'h':a.tier==='low'?'l':'m'}">${a.tier}</span></td>
+          <td style="font-size:11px;color:var(--slate)">Compete with ${a.tier==='low'?'market tier + quality narrative':'market or premium tier'}</td>
+        </tr>`).join('')}</tbody>
+      </table>
+    </div>`;
+}
+
+// ════════════════════════════════════════
+// CLIENT PROFILE
+// ════════════════════════════════════════
+function buildProfile() {
+  const p=appData.client_profile||{};
+  document.getElementById('profile-content').innerHTML=`
+    <div class="profile-grid">
+      <div class="profile-section">
+        <h3>Organization Details</h3>
+        <div class="frow"><label class="flbl">Organization Name</label><input class="fi" id="p-name" value="${esc(p.org_name||'')}" placeholder="e.g. ABC Community Services, LLC"></div>
+        <div class="frow"><label class="flbl">Primary Contact Name</label><input class="fi" id="p-contact" value="${esc(p.contact||'')}" placeholder="e.g. Jane Smith"></div>
+        <div class="frow"><label class="flbl">Email</label><input class="fi" id="p-email" value="${esc(p.email||'')}" placeholder="jane@company.com"></div>
+        <div class="frow"><label class="flbl">Phone</label><input class="fi" id="p-phone" value="${esc(p.phone||'')}" placeholder="(301) 555-0100"></div>
+        <div class="frow"><label class="flbl">Organization Type</label>
+          <select class="fsel" id="p-type">
+            <option ${p.org_type==='nonprofit'?'selected':''} value="nonprofit">Nonprofit 501(c)(3)</option>
+            <option ${p.org_type==='forprofit'?'selected':''} value="forprofit">For-Profit LLC/Corp</option>
+            <option ${p.org_type==='gov'?'selected':''} value="gov">Government Entity</option>
+          </select>
+        </div>
+        <div class="frow"><label class="flbl">Years in Operation</label><input class="fi" id="p-years" type="number" value="${p.years||''}" placeholder="e.g. 8"></div>
+      </div>
+      <div class="profile-section">
+        <h3>Service Capabilities</h3>
+        <div class="frow"><label class="flbl">Primary Services (for AI responses)</label><textarea class="fta" id="p-services" placeholder="e.g. HCBS Waiver Services, Group Home Operations, DSP Workforce Staffing, Educational Support Staffing">${esc(p.services||'')}</textarea></div>
+        <div class="frow"><label class="flbl">Geographic Service Area</label><input class="fi" id="p-geo" value="${esc(p.geography||'')}" placeholder="e.g. Maryland, Virginia, Washington DC"></div>
+        <div class="frow"><label class="flbl">Max Participants Served</label><input class="fi" id="p-cap" type="number" value="${p.capacity||''}" placeholder="e.g. 150"></div>
+        <div class="frow"><label class="flbl">Annual Revenue (est. $)</label><input class="fi" id="p-rev" type="number" value="${p.revenue||''}" placeholder="e.g. 3500000"></div>
+      </div>
+      <div class="profile-section">
+        <h3>Certifications & Credentials</h3>
+        <div class="frow"><label class="flbl">Active Certifications (auto-injected into proposals)</label>
+          <div id="creds-list">${(p.certs||[]).map(c=>`<span class="cred-tag">${esc(c)}<button onclick="removeCred('${c}')">✕</button></span>`).join('')}</div>
+          <div style="display:flex;gap:7px;margin-top:7px">
+            <input class="fi" id="cred-in" placeholder="e.g. Maryland DDA Licensed Provider" style="flex:1">
+            <button class="btn btn-g" onclick="addCred()" style="padding:7px 11px;font-size:12px">Add</button>
+          </div>
+        </div>
+        <div style="margin-top:8px;font-size:11px;color:var(--slate)">Common: Maryland DDA Licensed, Virginia DBHDS Licensed, DC DDS Enrolled, CARF Accredited, ANCOR Member, EVV Compliant</div>
+      </div>
+      <div class="profile-section">
+        <h3>Competitive Differentiators</h3>
+        <div class="frow"><label class="flbl">Key differentiators for proposals (auto-injected)</label><textarea class="fta" id="p-diff" placeholder="e.g. Only DMV firm combining procurement expertise with operations. 94% DSP retention rate. Average 18-day onboarding. CARF-aligned QA system.">${esc(p.differentiators||'')}</textarea></div>
+        <div class="frow"><label class="flbl">Past Performance Highlights</label><textarea class="fta" id="p-perf" placeholder="e.g. Managed $2.4M in HCBS contracts across MD and VA. Placed 80+ DSPs in 2024. Zero regulatory findings in 3 years.">${esc(p.past_performance||'')}</textarea></div>
+        <div class="frow"><label class="flbl">Rate Sheet / Cost Basis (helps auto-calculate budgets)</label><input class="fi" id="p-rate" type="number" step="0.01" value="${p.base_dsp_rate||''}" placeholder="Base DSP hourly rate e.g. 18.50"></div>
+      </div>
+    </div>`;
+}
+
+function addCred(){
+  const input=document.getElementById('cred-in'); const v=input.value.trim(); if(!v) return;
+  const p=appData.client_profile; p.certs=p.certs||[]; if(!p.certs.includes(v)) p.certs.push(v);
+  input.value=''; buildProfile();
+}
+function removeCred(c){
+  const p=appData.client_profile; p.certs=(p.certs||[]).filter(x=>x!==c); buildProfile();
+}
+
+async function saveProfile(){
+  const p=appData.client_profile;
+  p.org_name=document.getElementById('p-name').value;
+  p.contact=document.getElementById('p-contact').value;
+  p.email=document.getElementById('p-email').value;
+  p.phone=document.getElementById('p-phone').value;
+  p.org_type=document.getElementById('p-type').value;
+  p.years=document.getElementById('p-years').value;
+  p.services=document.getElementById('p-services').value;
+  p.geography=document.getElementById('p-geo').value;
+  p.capacity=document.getElementById('p-cap').value;
+  p.revenue=document.getElementById('p-rev').value;
+  p.differentiators=document.getElementById('p-diff').value;
+  p.past_performance=document.getElementById('p-perf').value;
+  p.base_dsp_rate=document.getElementById('p-rate').value;
+  try{await fetch(API+'/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)});}catch(e){}
+  showToast('Profile saved — auto-injecting into all future proposals');
+}
+
+// ════════════════════════════════════════
+// FORMATTING HELPERS
+// ════════════════════════════════════════
+function fmtPreview(text){
+  let h=esc(text);
+  h=h.replace(/\\d+\\.\\s*(EXECUTIVE SUMMARY|ORGANIZATIONAL CAPACITY[^:]*|STAFFING PLAN[^:]*|BUDGET JUSTIFICATION[^:]*|COMPLIANCE[^:]*|DIFFERENTIATION[^:]*|IMPLEMENTATION[^:]*|VERIFICATION[^:]*)[:\\s]*/gi,(m,s)=>`<div class="rsh">${s}</div>`);
+  h=h.replace(/\\[VERIFY:\\s*([^\\]]+)\\]/g,'<span class="rv">[VERIFY: $1]</span>');
+  h=h.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
+  h=h.replace(/\\n\\n/g,'</p><p>').replace(/\\n/g,'<br>');
+  return '<p>'+h+'</p>';
+}
+
+function fmtChat(text){
+  let h=esc(text);
+  const sections=['DIRECT ANSWER','VALUE CONTEXT','DIFFERENTIATION','NEXT STEPS','VERIFICATION NEEDED','EXECUTIVE SUMMARY','STAFFING PLAN','BUDGET JUSTIFICATION','COMPLIANCE','IMPLEMENTATION'];
+  sections.forEach(s=>{ h=h.replace(new RegExp('\\\\*\\\\*'+s+'[:\\\\s\\\\*]*','gi'),`<div style="display:inline-block;padding:2px 7px;background:var(--gold-bg);border:1px solid var(--gold-d);border-radius:3px;font-size:9.5px;font-weight:700;letter-spacing:.8px;text-transform:uppercase;color:var(--gold-d);margin-bottom:5px">${s}</div><br>`); });
+  h=h.replace(/\\[VERIFY:\\s*([^\\]]+)\\]/g,'<div class="vflag">🚩 <span><strong>Verify before submission:</strong> $1</span></div>');
+  h=h.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
+  h=h.replace(/^## (.+)$/gm,'<strong style="font-size:13px;display:block;margin:8px 0 4px">$1</strong>');
+  h=h.replace(/^[•\\-]\\s+(.+)$/gm,'<div style="padding:2px 0 2px 12px;position:relative"><span style="position:absolute;left:2px;color:var(--gold)">▸</span>$1</div>');
+  h=h.replace(/\\n\\n/g,'<br><br>').replace(/\\n/g,'<br>');
+  return h;
+}
+
+function fmtQA(text){
+  let h=esc(text);
+  h=h.replace(/✅ PASS: ([^\\n]+)/g,'<div class="qa-item qa-pass"><span class="qa-icon">✅</span><div class="qa-txt">$1</div></div>');
+  h=h.replace(/❌ FAIL: ([^\\n]+)/g,'<div class="qa-item qa-fail"><span class="qa-icon">❌</span><div class="qa-txt">$1</div></div>');
+  h=h.replace(/⚠️ WARN: ([^\\n]+)/g,'<div class="qa-item qa-warn"><span class="qa-icon">⚠️</span><div class="qa-txt">$1</div></div>');
+  h=h.replace(/OVERALL VERDICT: ([^\\n]+)/g,'<div style="margin-top:14px;padding:12px;background:var(--navy);border-radius:var(--r);font-size:13px;font-weight:600;color:var(--gold);text-align:center">OVERALL VERDICT: $1</div>');
+  h=h.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
+  h=h.replace(/\\n\\n/g,'<br><br>').replace(/\\n/g,'<br>');
+  return h;
+}
+
+function fmt$(n){return Math.round(n).toLocaleString();}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function openModal(id){document.getElementById(id).classList.add('open');}
+function closeModal(id){document.getElementById(id).classList.remove('open');}
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),3000);}
+
+// Close modals on overlay click
+document.querySelectorAll('.overlay').forEach(o=>o.addEventListener('click',e=>{if(e.target===o)o.classList.remove('open');}));
+
+// ════════════════════════════════════════
+// BOOT
+// ════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
+"""
+
+def get_api_key():
+    env_key = os.environ.get('ANTHROPIC_API_KEY', '').strip()
+    if env_key:
+        return env_key
+    if os.path.exists(CONFIG_FILE):
+        try:
+            with open(CONFIG_FILE) as f:
+                return json.load(f).get('api_key', '').strip()
+        except Exception:
+            pass
+    return ''
+
+def save_api_key(key):
+    os.makedirs(DATA_DIR, exist_ok=True)
+    with open(CONFIG_FILE, 'w') as f:
+        json.dump({'api_key': key}, f)
+
+SEED = {
+  "client_profile": {},
+  "uploaded_docs": [],
+  "bids": [
+    {"id":"b1","title":"HCBS Community Supports Waiver - MD DDA","state":"MD","value":850000,"status":"prep","agency":"Maryland Department of Health / DDA","due":"2025-05-12","budget":"mid","notes":[{"text":"Staffing matrix drafted","ts":"Apr 20 09:15","author":"Team"}],"created":"2025-04-15"},
+    {"id":"b2","title":"DSP Staffing Augmentation - VA DBHDS","state":"VA","value":300000,"status":"submitted","agency":"Virginia DBHDS","due":"2025-04-30","budget":"low","notes":[],"created":"2025-04-10"},
+    {"id":"b3","title":"Educational Paraprofessional Staffing - DCPS","state":"DC","value":750000,"status":"new","agency":"DC Public Schools","due":"2025-06-01","budget":"mid","notes":[],"created":"2025-04-18"},
+    {"id":"b4","title":"Group Home Residential Services - PG County MD","state":"MD","value":420000,"status":"won","agency":"Maryland DDA","due":"2025-03-15","budget":"high","notes":[],"created":"2025-02-10","debrief":{"factor":"Strong ISP compliance narrative","pricing":"Would keep premium tier","gap":"None flagged"}},
+    {"id":"b5","title":"Personal Supports Waiver - VA DMAS","state":"VA","value":480000,"status":"lost","agency":"Virginia DMAS","due":"2025-04-01","budget":"low","notes":[],"created":"2025-02-20","debrief":{"factor":"Undercut too aggressively","pricing":"Would use market tier next time","gap":"EVV documentation incomplete"}},
+    {"id":"b6","title":"DC DDS Healthcare Staffing Vendor","state":"DC","value":650000,"status":"new","agency":"DC Department on Disability Services","due":"2025-06-25","budget":"mid","notes":[],"created":"2025-04-20"}
+  ],
+  "rfps": [
+    {"id":1,"title":"HCBS Community Supports Waiver - Direct Support Services","agency":"Maryland Department of Health / DDA","procurement_agent":"MD Dept. of Health, Developmental Disabilities Administration (DDA)","state":"MD","type":"HCBS","value":850000,"due":"2025-05-12","daysLeft":18,"category":"HCBS Waiver","isNew":True,"score":None,"description":"Seeking qualified providers for community-based supports under Maryland's Community Supports Waiver. Providers must deliver individualized community-based support services to adults with developmental disabilities, including habilitation, skills training, and community integration.","deliverables":"Monthly service delivery reports, EVV-verified visit logs, ISP goal progress documentation, quarterly outcome summaries","requirements":"DDA Provider Agreement, Maryland Medicaid enrollment (MMIS), CJIS background checks for all staff, EVV compliance via 
